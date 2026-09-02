@@ -1,0 +1,17 @@
+# Web framework
+Flask>=3.0
+
+# Database / ORM (3.1+ is required for SQLAlchemy 2.0 DeclarativeBase support)
+Flask-SQLAlchemy>=3.1
+Flask-Migrate>=4.0
+
+# Configuration
+python-dotenv>=1.0
+
+# Data ingestion (CSV / Excel EPA extracts)
+pandas>=2.2
+openpyxl>=3.1
+
+# Testing
+pytest>=8.0
+pytest-flask>=1.3
