@@ -1,8 +1,8 @@
-"""initial schema
+"""Supabase Postgres setup
 
-Revision ID: 4eb2099c9e73
+Revision ID: 7b41b09d1309
 Revises: 
-Create Date: 2026-09-02 00:48:17.813866
+Create Date: 2026-09-02 09:17:09.597923
 
 """
 from alembic import op
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision = '4eb2099c9e73'
+revision = '7b41b09d1309'
 down_revision = None
 branch_labels = None
 depends_on = None

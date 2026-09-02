@@ -1,12 +1,17 @@
+# Environments
+.env
+.venv
+venv/
+ENV/
+
+# Python
 __pycache__/
 *.py[cod]
-.venv/
-venv/
-.env
-*.sqlite3
-.pytest_cache/
-venv/
-__pycache__/
-instance/
-.env
+*$py.class
+
+# Database (if you ever test SQLite again)
 *.db
+*.sqlite3
+
+# OS generated files
+.DS_Store

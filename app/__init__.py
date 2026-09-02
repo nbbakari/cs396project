@@ -34,15 +34,32 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     """
     app = Flask(__name__, instance_relative_config=True)
 
-    default_db_uri = f"sqlite:///{BASE_DIR / 'data' / 'epadata.sqlite3'}"
     app.config.from_mapping(
         SECRET_KEY=os.getenv("SECRET_KEY", "dev-secret-key"),
-        SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL", default_db_uri),
+        SQLALCHEMY_DATABASE_URI=os.getenv("DATABASE_URL"),
         SQLALCHEMY_TRACK_MODIFICATIONS=False,
+        # Verify connections before use; pooled Supabase connections are
+        # dropped when idle, which otherwise surfaces as a stale-connection
+        # error on the first query after a quiet period.
+        SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True},
+        # EPA Clean Air Markets Program Data API credentials.
+        CAMPD_API_KEY=os.getenv("CAMPD_API_KEY"),
+        CAMPD_API_BASE_URL=os.getenv(
+            "CAMPD_API_BASE_URL", "https://api.epa.gov/easey"
+        ),
     )
 
     if config_overrides:
         app.config.update(config_overrides)
+
+    # Fail loudly rather than falling back to a throwaway local database:
+    # a silent fallback would look like a working app that writes nowhere
+    # useful. Checked after overrides so tests can supply their own URI.
+    if not app.config.get("SQLALCHEMY_DATABASE_URI"):
+        raise RuntimeError(
+            "DATABASE_URL is not set. Copy .env.example to .env and set "
+            "DATABASE_URL to your Supabase connection string."
+        )
 
     db.init_app(app)
     migrate.init_app(app, db)

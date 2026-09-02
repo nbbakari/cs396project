@@ -5,6 +5,9 @@ Flask>=3.0
 Flask-SQLAlchemy>=3.1
 Flask-Migrate>=4.0
 
+# PostgreSQL driver (required by the postgresql:// DATABASE_URL)
+psycopg2-binary>=2.9
+
 # Configuration
 python-dotenv>=1.0
 
