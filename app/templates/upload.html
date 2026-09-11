@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}Upload data &middot; epaData{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Upload emissions data</h1>
+<p class="text-body-secondary mb-4">
+  Import a CAMPD annual emissions extract as <code>.csv</code> or
+  <code>.xlsx</code>.
+</p>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <form
+      action="{{ url_for('upload.upload_file') }}"
+      method="post"
+      enctype="multipart/form-data"
+    >
+      <div class="mb-3">
+        <label for="data_file" class="form-label">Data file</label>
+        <input
+          type="file"
+          class="form-control"
+          id="data_file"
+          name="data_file"
+          accept=".csv,.xlsx"
+          required
+        />
+        <div class="form-text">
+          Must include Facility ID, Unit ID and Year columns.
+        </div>
+      </div>
+
+      <div class="mb-3">
+        <label for="dataset_name" class="form-label">
+          Dataset name <span class="text-body-secondary">(optional)</span>
+        </label>
+        <input
+          type="text"
+          class="form-control"
+          id="dataset_name"
+          name="dataset_name"
+          maxlength="150"
+          placeholder="Defaults to the filename"
+        />
+      </div>
+
+      <button type="submit" class="btn btn-primary">Upload</button>
+    </form>
+  </div>
+</div>
+
+<details class="mt-4">
+  <summary class="text-body-secondary">Recognised columns</summary>
+  <p class="small text-body-secondary mt-2 mb-0">
+    Headers are matched case-insensitively and ignore punctuation and units, so
+    <code>Gross Load (MWh)</code>, <code>Gross Load</code> and
+    <code>grossLoad</code> are all accepted. Required:
+    <code>Facility ID</code>, <code>Unit ID</code>, <code>Year</code>. Optional:
+    facility name, state, county, latitude, longitude, source category, unit
+    type, primary/secondary fuel, operating time, gross load, steam load, heat
+    input, CO2/SO2/NOx mass, SO2/NOx/PM controls and program code.
+    Unrecognised columns are ignored.
+  </p>
+</details>
+{% endblock %}

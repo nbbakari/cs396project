@@ -58,10 +58,10 @@ class Facility(db.Model):
     epa_facility_id: Mapped[int] = mapped_column(primary_key=True, autoincrement=False)
     facility_name: Mapped[str] = mapped_column(String(255))
     state_code: Mapped[str] = mapped_column(String(2))
-    county: Mapped[str] = mapped_column(String(100))
-    latitude: Mapped[float]
-    longitude: Mapped[float]
-    source_category: Mapped[str] = mapped_column(String(150))
+    county: Mapped[Optional[str]] = mapped_column(String(100))
+    latitude: Mapped[Optional[float]]
+    longitude: Mapped[Optional[float]]
+    source_category: Mapped[Optional[str]] = mapped_column(String(150))
 
     units: Mapped[list["Unit"]] = relationship(
         back_populates="facility",
@@ -80,6 +80,12 @@ class Unit(db.Model):
     """
 
     __tablename__ = "units"
+    __table_args__ = (
+        # ``epa_unit_id`` is unique only within a facility. The constraint lets
+        # ingestion upsert a unit on its natural key instead of duplicating it
+        # on every re-upload.
+        UniqueConstraint("facility_id", "epa_unit_id", name="uq_facility_epa_unit"),
+    )
 
     internal_unit_key: Mapped[int] = mapped_column(primary_key=True)
     facility_id: Mapped[int] = mapped_column(

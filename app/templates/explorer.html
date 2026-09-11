@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Data explorer &middot; epaData{% endblock %}
+
+{% block container_width %}960px{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Data explorer</h1>
+<p class="text-body-secondary mb-4">
+  Top facilities by total CO<sub>2</sub> mass for the most recent reporting
+  year.
+</p>
+
+<div class="card shadow-sm">
+  <div class="card-body">
+    <div id="co2-chart"></div>
+    <p id="chart-status" class="text-body-secondary small mb-0">Loading&hellip;</p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Fetches the chart data and logs it. Replace the console.log with the
+  // Plotly.newPlot call that draws into #co2-chart.
+  //
+  // The endpoint defaults to the most recent reporting year; append
+  // ?year=2022 to pin it to a specific one.
+  const statusEl = document.getElementById("chart-status");
+
+  fetch("{{ url_for('api.top_facilities') }}")
+    .then((response) => {
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    })
+    .then((data) => {
+      console.log("top-facilities:", data);
+      statusEl.textContent = data.length
+        ? `${data.length} facilities for ${data[0].year} — see the browser console.`
+        : "No emissions data ingested yet.";
+    })
+    .catch((error) => {
+      console.error("Failed to load top facilities:", error);
+      statusEl.textContent = `Could not load chart data: ${error.message}`;
+    });
+</script>
+{% endblock %}

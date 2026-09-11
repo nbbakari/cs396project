@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="p-5 bg-body rounded-3 shadow-sm text-center">
+  <h1 class="display-5 fw-semibold mb-3">epaData</h1>
+  <p class="lead text-body-secondary mb-4">
+    A search engine and dashboard for U.S. power sector emissions, built on EPA
+    Clean Air Markets Program Data.
+  </p>
+  <div class="d-flex gap-2 justify-content-center flex-wrap">
+    <a
+      href="{{ url_for('upload.upload_form') }}"
+      class="btn btn-primary btn-lg px-4"
+    >
+      Upload emissions data
+    </a>
+    <a
+      href="{{ url_for('main.explorer') }}"
+      class="btn btn-outline-secondary btn-lg px-4"
+    >
+      Data explorer
+    </a>
+  </div>
+  <p class="small text-body-secondary mt-4 mb-0">
+    Import a CAMPD annual emissions extract as <code>.csv</code> or
+    <code>.xlsx</code> to populate the database.
+  </p>
+</div>
+{% endblock %}

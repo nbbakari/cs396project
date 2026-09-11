@@ -42,6 +42,9 @@ def create_app(config_overrides: dict | None = None) -> Flask:
         # dropped when idle, which otherwise surfaces as a stale-connection
         # error on the first query after a quiet period.
         SQLALCHEMY_ENGINE_OPTIONS={"pool_pre_ping": True},
+        # Reject oversized uploads before they are buffered; Werkzeug raises
+        # 413, which the upload blueprint turns into a flash message.
+        MAX_CONTENT_LENGTH=int(os.getenv("MAX_UPLOAD_MB", "32")) * 1024 * 1024,
         # EPA Clean Air Markets Program Data API credentials.
         CAMPD_API_KEY=os.getenv("CAMPD_API_KEY"),
         CAMPD_API_BASE_URL=os.getenv(
@@ -68,9 +71,13 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     # `flask db migrate` can see every table.
     from app import models  # noqa: F401
 
-    @app.route("/")
-    def index():
-        return {"application": "epaData", "status": "ok"}
+    from app.routes.api import api_bp
+    from app.routes.main import main_bp
+    from app.routes.upload import upload_bp
+
+    app.register_blueprint(main_bp)
+    app.register_blueprint(upload_bp)
+    app.register_blueprint(api_bp)
 
     @app.shell_context_processor
     def shell_context():
