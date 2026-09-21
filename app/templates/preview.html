@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Review import &middot; epaData{% endblock %}
+{% block container_width %}960px{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-1">Review import</h1>
+<p class="text-body-secondary mb-4">
+  <code>{{ meta.original_filename }}</code> &mdash; nothing has been saved yet.
+</p>
+
+<div class="row row-cols-2 row-cols-md-3 g-3 mb-4">
+  <div class="col">
+    <div class="card h-100"><div class="card-body">
+      <div class="fs-4 fw-semibold">{{ "{:,}".format(stats.raw_records) }}</div>
+      <div class="small text-body-secondary">Raw rows in file</div>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card h-100 border-success"><div class="card-body">
+      <div class="fs-4 fw-semibold text-success">{{ "{:,}".format(stats.clean_records) }}</div>
+      <div class="small text-body-secondary">Ready to import</div>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card h-100"><div class="card-body">
+      <div class="fs-4 fw-semibold">{{ "{:,}".format(stats.dropped_missing_keys) }}</div>
+      <div class="small text-body-secondary">Rejected &mdash; missing facility/unit/year</div>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card h-100"><div class="card-body">
+      <div class="fs-4 fw-semibold">{{ "{:,}".format(stats.dropped_negative) }}</div>
+      <div class="small text-body-secondary">Rejected &mdash; negative metrics</div>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card h-100"><div class="card-body">
+      <div class="fs-4 fw-semibold">{{ "{:,}".format(stats.dropped_duplicates) }}</div>
+      <div class="small text-body-secondary">Duplicate unit-years in file</div>
+    </div></div>
+  </div>
+  <div class="col">
+    <div class="card h-100"><div class="card-body">
+      <div class="fs-4 fw-semibold">{{ "{:,}".format(stats.substituted_zero) }}</div>
+      <div class="small text-body-secondary">Missing metrics defaulted to 0</div>
+    </div></div>
+  </div>
+</div>
+
+{% if stats.absent_columns %}
+<div class="alert alert-info">
+  Columns not present in this file (left blank or defaulted):
+  {{ stats.absent_columns | join(", ") }}
+</div>
+{% endif %}
+
+<h2 class="h6 text-body-secondary mb-2">
+  Preview
+  {% if total_rows > row_limit %}
+    (first {{ row_limit }} of {{ "{:,}".format(total_rows) }} rows)
+  {% endif %}
+</h2>
+<div class="table-responsive mb-4">
+  <table class="table table-sm table-striped">
+    <thead>
+      <tr>
+        {% for _, label in columns %}<th scope="col">{{ label }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        {% for field, _ in columns %}<td>{{ row[field] }}</td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="d-flex gap-2">
+  <form action="{{ url_for('upload.confirm_import') }}" method="post" class="d-flex gap-2 align-items-start flex-grow-1">
+    <input type="hidden" name="staging_id" value="{{ staging_id }}" />
+    <input
+      type="text"
+      class="form-control"
+      name="dataset_name"
+      maxlength="150"
+      value="{{ meta.dataset_name }}"
+      aria-label="Dataset name"
+    />
+    <button type="submit" class="btn btn-success text-nowrap">Confirm import</button>
+  </form>
+  <form action="{{ url_for('upload.cancel_import') }}" method="post">
+    <input type="hidden" name="staging_id" value="{{ staging_id }}" />
+    <button type="submit" class="btn btn-outline-secondary">Discard</button>
+  </form>
+</div>
+{% endblock %}

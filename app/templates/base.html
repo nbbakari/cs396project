@@ -10,71 +10,128 @@
       integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH"
       crossorigin="anonymous"
     />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}" />
     {% block head %}{% endblock %}
   </head>
-  <body class="bg-body-tertiary d-flex flex-column min-vh-100">
-    <nav class="navbar navbar-expand-sm bg-body border-bottom">
-      <div class="container">
-        <a class="navbar-brand fw-semibold" href="{{ url_for('main.index') }}">
-          epaData
-        </a>
-        <button
-          class="navbar-toggler"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#primary-nav"
-          aria-controls="primary-nav"
-          aria-expanded="false"
-          aria-label="Toggle navigation"
-        >
-          <span class="navbar-toggler-icon"></span>
-        </button>
-        <div class="collapse navbar-collapse" id="primary-nav">
-          <ul class="navbar-nav">
-            {% for endpoint, label in [
-              ('main.index', 'Home'),
-              ('upload.upload_form', 'Upload'),
-              ('main.explorer', 'Explorer')
-            ] %}
-            <li class="nav-item">
-              <a
-                class="nav-link{{ ' active' if request.endpoint == endpoint }}"
-                href="{{ url_for(endpoint) }}"
-                {% if request.endpoint == endpoint %}aria-current="page"{% endif %}
-              >
-                {{ label }}
-              </a>
-            </li>
-            {% endfor %}
-          </ul>
-        </div>
-      </div>
-    </nav>
-
-    <main
-      class="container py-5 flex-grow-1"
-      style="max-width: {% block container_width %}720px{% endblock %}"
-    >
-      {% with messages = get_flashed_messages(with_categories=true) %} {% if
-      messages %}
-      <div class="mb-4">
-        {% for category, message in messages %}
-        <div
-          class="alert alert-{{ category if category in ['success', 'danger', 'warning', 'info'] else 'secondary' }} alert-dismissible fade show"
-          role="alert"
-        >
-          {{ message }}
+  <body>
+    <div class="app-shell">
+      <div
+        class="offcanvas-lg offcanvas-start sidebar"
+        tabindex="-1"
+        id="sidebarOffcanvas"
+        aria-labelledby="sidebarOffcanvasLabel"
+      >
+        <div class="offcanvas-header d-lg-none">
+          <h5 class="offcanvas-title text-white" id="sidebarOffcanvasLabel">epaData</h5>
           <button
             type="button"
-            class="btn-close"
-            data-bs-dismiss="alert"
+            class="btn-close btn-close-white"
+            data-bs-dismiss="offcanvas"
+            data-bs-target="#sidebarOffcanvas"
             aria-label="Close"
           ></button>
         </div>
-        {% endfor %}
+        <div class="offcanvas-body sidebar-body">
+          <div class="sidebar-logo">
+            <div class="mark">e</div>
+            <div>
+              <div class="name">epaData</div>
+              <div class="tagline">Data Intelligence Hub</div>
+            </div>
+          </div>
+
+          <div class="sidebar-section-label">Core modules</div>
+          <nav class="sidebar-nav nav flex-column gap-1">
+            {% for endpoint, label, planned in [
+              ('main.index', 'Dashboard / Overview', false),
+              (none, 'Data Retrieval', true),
+              ('upload.upload_form', 'File Intake &amp; Validation', false),
+              ('main.explorer', 'Data Explorer', false),
+              (none, 'Facility &amp; Unit Analytics', true),
+              (none, 'Export &amp; Downloads', true)
+            ] %}
+            {% if planned %}
+            <span class="nav-link disabled">
+              {{ label | safe }}
+              <span class="planned-badge">Planned</span>
+            </span>
+            {% else %}
+            
+              class="nav-link{{ ' active' if request.endpoint == endpoint }}"
+              href="{{ url_for(endpoint) }}"
+              {% if request.endpoint == endpoint %}aria-current="page"{% endif %}
+            >
+              {{ label | safe }}
+            </a>
+            {% endif %}
+            {% endfor %}
+          </nav>
+
+          <div class="sidebar-status">
+            <span
+              class="status-dot {{ 'ok' if sidebar_db_status == 'ok' else 'down' }}"
+            ></span>
+            Data pipeline &mdash;
+            {{ "Operational" if sidebar_db_status == "ok" else "Unavailable" }}
+          </div>
+        </div>
       </div>
-      {% endif %} {% endwith %} {% block content %}{% endblock %}
-    </main>
+
+      <div class="app-main">
+        <nav class="mobile-topbar d-flex d-lg-none align-items-center justify-content-between">
+          <a class="text-white text-decoration-none fw-semibold" href="{{ url_for('main.index') }}">
+            epaData
+          </a>
+          <button
+            class="btn btn-sm btn-outline-light"
+            type="button"
+            data-bs-toggle="offcanvas"
+            data-bs-target="#sidebarOffcanvas"
+            aria-controls="sidebarOffcanvas"
+          >
+            Menu
+          </button>
+        </nav>
+
+        <header class="app-topbar d-none d-lg-flex">
+          <div class="crumb">Emissions Registry &rsaquo; <strong>{% block breadcrumb %}Overview{% endblock %}</strong></div>
+          <div class="ms-auto d-flex gap-2 flex-wrap">
+            <span class="badge badge-soft">
+              {% if sidebar_record_count is not none %}
+                {{ "{:,}".format(sidebar_record_count) }} records indexed
+              {% else %}
+                Database unavailable
+              {% endif %}
+            </span>
+            <span class="badge badge-phase">Phase 1: Data Management</span>
+          </div>
+        </header>
+
+        <main class="app-content">
+          {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+          <div class="mb-4">
+            {% for category, message in messages %}
+            <div
+              class="alert alert-{{ category if category in ['success', 'danger', 'warning', 'info'] else 'secondary' }} alert-dismissible fade show"
+              role="alert"
+            >
+              {{ message }}
+              <button
+                type="button"
+                class="btn-close"
+                data-bs-dismiss="alert"
+                aria-label="Close"
+              ></button>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
+          {% endwith %}
+          {% block content %}{% endblock %}
+        </main>
+      </div>
+    </div>
 
     <script
       src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"

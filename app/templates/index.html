@@ -1,29 +1,99 @@
 {% extends "base.html" %}
 
+{% block breadcrumb %}Dashboard / Overview{% endblock %}
+
 {% block content %}
-<div class="p-5 bg-body rounded-3 shadow-sm text-center">
-  <h1 class="display-5 fw-semibold mb-3">epaData</h1>
-  <p class="lead text-body-secondary mb-4">
+<div class="p-5 bg-white rounded-3 border mb-4">
+  <h1 class="h3 fw-semibold mb-3">epaData</h1>
+  <p class="text-body-secondary mb-4">
     A search engine and dashboard for U.S. power sector emissions, built on EPA
     Clean Air Markets Program Data.
   </p>
-  <div class="d-flex gap-2 justify-content-center flex-wrap">
-    <a
-      href="{{ url_for('upload.upload_form') }}"
-      class="btn btn-primary btn-lg px-4"
-    >
+  <div class="d-flex gap-2 flex-wrap">
+    <a href="{{ url_for('upload.upload_form') }}" class="btn btn-primary">
       Upload emissions data
     </a>
-    <a
-      href="{{ url_for('main.explorer') }}"
-      class="btn btn-outline-secondary btn-lg px-4"
-    >
+    <a href="{{ url_for('main.explorer') }}" class="btn btn-outline-secondary">
       Data explorer
     </a>
   </div>
-  <p class="small text-body-secondary mt-4 mb-0">
-    Import a CAMPD annual emissions extract as <code>.csv</code> or
-    <code>.xlsx</code> to populate the database.
-  </p>
 </div>
+
+<h2 class="h6 text-body-secondary mb-3">Current coverage</h2>
+{% if coverage.record_count == 0 %}
+<div class="alert alert-info">
+  No emissions data has been ingested yet.
+  <a href="{{ url_for('upload.upload_form') }}">Upload a CAMPD extract</a> to
+  populate the dashboard.
+</div>
+{% else %}
+<div class="row row-cols-2 row-cols-md-4 g-3 mb-5">
+  <div class="col">
+    <div class="stat-panel">
+      <div class="stat-label">Facilities</div>
+      <div class="stat-value">{{ "{:,}".format(coverage.facility_count) }}</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="stat-panel">
+      <div class="stat-label">Units</div>
+      <div class="stat-value">{{ "{:,}".format(coverage.unit_count) }}</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="stat-panel">
+      <div class="stat-label">Annual records</div>
+      <div class="stat-value">{{ "{:,}".format(coverage.record_count) }}</div>
+    </div>
+  </div>
+  <div class="col">
+    <div class="stat-panel">
+      <div class="stat-label">States covered</div>
+      <div class="stat-value">{{ coverage.state_count }}</div>
+    </div>
+  </div>
+</div>
+
+<p class="text-body-secondary mb-5">
+  Reporting years on file:
+  <strong>
+    {% if coverage.year_min == coverage.year_max %}
+      {{ coverage.year_min }}
+    {% else %}
+      {{ coverage.year_min }}&ndash;{{ coverage.year_max }}
+    {% endif %}
+  </strong>
+</p>
+{% endif %}
+
+<h2 class="h6 text-body-secondary mb-3">Data sources</h2>
+{% if not datasets %}
+<p class="text-body-secondary">No datasets have been imported yet.</p>
+{% else %}
+<div class="table-responsive">
+  <table class="table table-sm table-striped bg-white">
+    <thead>
+      <tr>
+        <th scope="col">Dataset</th>
+        <th scope="col">Source</th>
+        <th scope="col">Year</th>
+        <th scope="col">Imported</th>
+        <th scope="col" class="text-end">Records accepted</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for dataset in datasets %}
+      <tr>
+        <td>{{ dataset.dataset_name }}</td>
+        <td>{{ dataset.data_source }}</td>
+        <td>{{ dataset.reporting_year }}</td>
+        <td>{{ dataset.retrieval_date.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td class="text-end">{{ "{:,}".format(dataset.accepted_records) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="small text-body-secondary">Showing the 10 most recent imports.</p>
+{% endif %}
 {% endblock %}

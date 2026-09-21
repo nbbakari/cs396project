@@ -79,6 +79,29 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     app.register_blueprint(upload_bp)
     app.register_blueprint(api_bp)
 
+    @app.context_processor
+    def inject_sidebar_status():
+        """Lightweight status shown in the sidebar/topbar on every page.
+
+        Runs one cheap COUNT per request. A high-traffic app would cache
+        this, but that's not worth the complexity for a low-traffic class
+        project -- if it ever becomes one, this is the first thing to cache.
+        """
+        from sqlalchemy import func, select
+
+        try:
+            record_count = db.session.execute(
+                select(func.count(models.AnnualRecord.id))
+            ).scalar() or 0
+            db_status = "ok"
+        except Exception:  # noqa: BLE001 - any DB failure just degrades the badge
+            db.session.rollback()
+            record_count = None
+            db_status = "down"
+        return {"sidebar_record_count": record_count, "sidebar_db_status": db_status}
+
+
+
     @app.shell_context_processor
     def shell_context():
         return {
