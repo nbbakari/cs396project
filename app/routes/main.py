@@ -1,6 +1,6 @@
 """Landing page and dashboard pages for epaData."""
 
-from flask import Blueprint, render_template
+from flask import Blueprint, flash, redirect, render_template, url_for
 from sqlalchemy import func
 
 from app import db
@@ -43,3 +43,19 @@ def index():
 def explorer():
     """Render the data explorer, which draws its data from the JSON API."""
     return render_template("explorer.html")
+
+@main_bp.route("/dataset/<int:dataset_id>/delete", methods=["POST"])
+def delete_dataset(dataset_id):
+    """Delete an imported dataset and its annual records.
+
+    Facility and Unit rows are left in place, since other datasets may still
+    reference them -- only records that trace back to this specific import
+    are removed (via the Dataset -> AnnualRecord cascade in the model).
+    """
+    dataset = Dataset.query.get_or_404(dataset_id)
+    name = dataset.dataset_name
+    count = dataset.accepted_records
+    db.session.delete(dataset)
+    db.session.commit()
+    flash(f"Deleted dataset '{name}' and its {count:,} record(s).", "info")
+    return redirect(url_for("main.index"))

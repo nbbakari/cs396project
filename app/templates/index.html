@@ -78,7 +78,9 @@
         <th scope="col">Source</th>
         <th scope="col">Year</th>
         <th scope="col">Imported</th>
-        <th scope="col" class="text-end">Records accepted</th>
+        <th scope="col" class="text-end">Records accepted</th> 
+         <th scope="col"></th>
+
       </tr>
     </thead>
     <tbody>
@@ -89,6 +91,7 @@
         <td>{{ dataset.reporting_year }}</td>
         <td>{{ dataset.retrieval_date.strftime("%Y-%m-%d %H:%M") }}</td>
         <td class="text-end">{{ "{:,}".format(dataset.accepted_records) }}</td>
+        <td class="text-end"> <form action="{{ url_for('main.delete_dataset', dataset_id=dataset.id) }}" method="post" onsubmit="return confirm('Delete {{ dataset.dataset_name | e }} and its {{ dataset.accepted_records }} record(s)? This cannot be undone.');" > <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button> </form> </td>
       </tr>
       {% endfor %}
     </tbody>
