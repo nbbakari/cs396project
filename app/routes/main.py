@@ -59,3 +59,25 @@ def delete_dataset(dataset_id):
     db.session.commit()
     flash(f"Deleted dataset '{name}' and its {count:,} record(s).", "info")
     return redirect(url_for("main.index"))
+@main_bp.route("/facility/<int:facility_id>")
+def facility_detail(facility_id):
+    """Drill-down page: one facility and every unit on file for it."""
+    facility = Facility.query.get_or_404(facility_id)
+    units = (
+        Unit.query.filter_by(facility_id=facility_id)
+        .order_by(Unit.epa_unit_id)
+        .all()
+    )
+    return render_template("facility_detail.html", facility=facility, units=units)
+
+
+@main_bp.route("/unit/<int:unit_key>")
+def unit_detail(unit_key):
+    """Drill-down page: one unit's full year-by-year emissions history."""
+    unit = Unit.query.get_or_404(unit_key)
+    records = (
+        AnnualRecord.query.filter_by(unit_id=unit_key)
+        .order_by(AnnualRecord.reporting_year.desc())
+        .all()
+    )
+    return render_template("unit_detail.html", unit=unit, records=records)

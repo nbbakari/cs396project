@@ -1,0 +1,23 @@
+#records-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+#records-table th.sortable:hover {
+  background: #f1f5f9;
+}
+#records-table th.sortable .arrow {
+  font-size: 0.7rem;
+  opacity: 0.5;
+  margin-left: 0.25rem;
+}
+#records-table th.sortable.active .arrow {
+  opacity: 1;
+}
+#records-table a.row-link {
+  color: inherit;
+  text-decoration: none;
+}
+#records-table a.row-link:hover {
+  text-decoration: underline;
+}

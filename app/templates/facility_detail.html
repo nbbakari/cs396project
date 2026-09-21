@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}{{ facility.facility_name }} &middot; epaData{% endblock %}
+{% block breadcrumb %}Facility &rsaquo; {{ facility.facility_name }}{% endblock %}
+{% block container_width %}960px{% endblock %}
+
+{% block content %}
+<p class="mb-2"><a href="{{ url_for('main.explorer') }}">&larr; Back to explorer</a></p>
+<h1 class="h4 mb-1">{{ facility.facility_name }}</h1>
+<p class="text-body-secondary mb-4">
+  EPA Facility ID {{ facility.epa_facility_id }} &middot; {{ facility.state_code }}
+  {% if facility.county %} &middot; {{ facility.county }} County{% endif %}
+</p>
+
+<h2 class="h6 text-body-secondary mb-2">Units ({{ units | length }})</h2>
+{% if not units %}
+<p class="text-body-secondary">No units on file for this facility.</p>
+{% else %}
+<div class="table-responsive">
+  <table class="table table-sm table-striped bg-white">
+    <thead>
+      <tr>
+        <th>Unit ID</th>
+        <th>Type</th>
+        <th>Primary fuel</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for unit in units %}
+      <tr>
+        <td>{{ unit.epa_unit_id }}</td>
+        <td>{{ unit.unit_type }}</td>
+        <td>{{ unit.primary_fuel }}</td>
+        <td class="text-end">
+          
+            href="{{ url_for('main.unit_detail', unit_key=unit.internal_unit_key) }}"
+            class="btn btn-sm btn-outline-secondary"
+          >
+            View history
+          </a>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

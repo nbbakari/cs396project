@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+
+{% block title %}Unit {{ unit.epa_unit_id }} &middot; epaData{% endblock %}
+{% block breadcrumb %}Unit &rsaquo; {{ unit.epa_unit_id }}{% endblock %}
+{% block container_width %}960px{% endblock %}
+
+{% block content %}
+<p class="mb-2">
+  <a href="{{ url_for('main.facility_detail', facility_id=unit.facility_id) }}">
+    &larr; {{ unit.facility.facility_name }}
+  </a>
+</p>
+<h1 class="h4 mb-1">Unit {{ unit.epa_unit_id }}</h1>
+<p class="text-body-secondary mb-4">
+  {{ unit.unit_type }} &middot; {{ unit.primary_fuel }}
+  {% if unit.secondary_fuel %} / {{ unit.secondary_fuel }}{% endif %}
+</p>
+
+<h2 class="h6 text-body-secondary mb-2">Annual records ({{ records | length }})</h2>
+{% if not records %}
+<p class="text-body-secondary">No annual records on file for this unit.</p>
+{% else %}
+<div class="table-responsive">
+  <table class="table table-sm table-striped bg-white">
+    <thead>
+      <tr>
+        <th>Year</th>
+        <th class="text-end">Gross load</th>
+        <th class="text-end">Heat input</th>
+        <th class="text-end">CO2</th>
+        <th class="text-end">SO2</th>
+        <th class="text-end">NOx</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for record in records %}
+      <tr>
+        <td>{{ record.reporting_year }}</td>
+        <td class="text-end">{{ "{:,.0f}".format(record.gross_load) }}</td>
+        <td class="text-end">{{ "{:,.0f}".format(record.heat_input) }}</td>
+        <td class="text-end">{{ "{:,.1f}".format(record.co2_mass) }}</td>
+        <td class="text-end">{{ "{:,.1f}".format(record.so2_mass) }}</td>
+        <td class="text-end">{{ "{:,.1f}".format(record.nox_mass) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

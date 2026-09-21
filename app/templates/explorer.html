@@ -1,16 +1,82 @@
 {% extends "base.html" %}
 
 {% block title %}Data explorer &middot; epaData{% endblock %}
+{% block breadcrumb %}Data Explorer{% endblock %}
+{% block container_width %}1100px{% endblock %}
 
-{% block container_width %}960px{% endblock %}
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/explorer.css') }}" />
+{% endblock %}
 
 {% block content %}
-<h1 class="h3 mb-1">Data explorer</h1>
+<h1 class="h4 mb-1">Data explorer</h1>
 <p class="text-body-secondary mb-4">
-  Top facilities by total CO<sub>2</sub> mass for the most recent reporting
-  year.
+  Browse every annual emissions record. Click a column header to sort, or a
+  facility/unit to drill into its full history.
 </p>
 
+<div class="card mb-4">
+  <div class="card-body d-flex flex-wrap gap-3 align-items-end">
+    <div>
+      <label for="filter-year" class="form-label small mb-1">Year</label>
+      <select id="filter-year" class="form-select form-select-sm">
+        <option value="">All years</option>
+      </select>
+    </div>
+    <div>
+      <label for="filter-state" class="form-label small mb-1">State</label>
+      <input
+        id="filter-state"
+        type="text"
+        maxlength="2"
+        class="form-control form-control-sm text-uppercase"
+        style="width: 5rem"
+        placeholder="KY"
+      />
+    </div>
+    <div>
+      <button id="filter-apply" class="btn btn-sm btn-primary">Apply</button>
+      <button id="filter-reset" class="btn btn-sm btn-outline-secondary">Reset</button>
+    </div>
+    <div class="ms-auto small text-body-secondary" id="result-summary"></div>
+  </div>
+</div>
+
+<div class="table-responsive bg-white border rounded-2">
+  <table class="table table-sm table-hover mb-0" id="records-table">
+    <thead>
+      <tr>
+        <th data-sort="facility_name" class="sortable">Facility</th>
+        <th data-sort="state_code" class="sortable">State</th>
+        <th data-sort="epa_unit_id" class="sortable">Unit</th>
+        <th data-sort="reporting_year" class="sortable">Year</th>
+        <th data-sort="gross_load" class="sortable text-end">Gross load</th>
+        <th data-sort="heat_input" class="sortable text-end">Heat input</th>
+        <th data-sort="co2_mass" class="sortable text-end">CO2</th>
+        <th data-sort="so2_mass" class="sortable text-end">SO2</th>
+        <th data-sort="nox_mass" class="sortable text-end">NOx</th>
+      </tr>
+    </thead>
+    <tbody id="records-body">
+      <tr><td colspan="9" class="text-center text-body-secondary py-4">Loading&hellip;</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<div class="d-flex justify-content-between align-items-center mt-3">
+  <div class="small text-body-secondary" id="page-summary"></div>
+  <div class="btn-group">
+    <button id="page-prev" class="btn btn-sm btn-outline-secondary">&larr; Prev</button>
+    <button id="page-next" class="btn btn-sm btn-outline-secondary">Next &rarr;</button>
+  </div>
+</div>
+
+<hr class="my-5" />
+
+<h2 class="h5 mb-1">Top emitters</h2>
+<p class="text-body-secondary mb-4">
+  Top facilities by total CO<sub>2</sub> mass for the most recent reporting year.
+</p>
 <div class="card shadow-sm">
   <div class="card-body">
     <div id="co2-chart"></div>
@@ -21,13 +87,16 @@
 
 {% block scripts %}
 <script>
-  // Fetches the chart data and logs it. Replace the console.log with the
-  // Plotly.newPlot call that draws into #co2-chart.
-  //
-  // The endpoint defaults to the most recent reporting year; append
-  // ?year=2022 to pin it to a specific one.
+  window.EXPLORER_URLS = {
+    records: "{{ url_for('api.emissions_records') }}",
+    years: "{{ url_for('api.reporting_years') }}",
+    facilityTemplate: "{{ url_for('main.facility_detail', facility_id=0) }}",
+    unitTemplate: "{{ url_for('main.unit_detail', unit_key=0) }}",
+  };
+</script>
+<script src="{{ url_for('static', filename='js/explorer.js') }}"></script>
+<script>
   const statusEl = document.getElementById("chart-status");
-
   fetch("{{ url_for('api.top_facilities') }}")
     .then((response) => {
       if (!response.ok) {
@@ -36,10 +105,10 @@
       return response.json();
     })
     .then((data) => {
-      console.log("top-facilities:", data);
       statusEl.textContent = data.length
         ? `${data.length} facilities for ${data[0].year} — see the browser console.`
         : "No emissions data ingested yet.";
+      console.log("top-facilities:", data);
     })
     .catch((error) => {
       console.error("Failed to load top facilities:", error);
