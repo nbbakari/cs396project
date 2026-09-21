@@ -42,30 +42,15 @@
 
           <div class="sidebar-section-label">Core modules</div>
           <nav class="sidebar-nav nav flex-column gap-1">
-            {% for endpoint, label, planned in [
-              ('main.index', 'Dashboard / Overview', false),
-              (none, 'Data Retrieval', true),
-              ('upload.upload_form', 'File Intake &amp; Validation', false),
-              ('main.explorer', 'Data Explorer', false),
-              (none, 'Facility &amp; Unit Analytics', true),
-              (none, 'Export &amp; Downloads', true)
-            ] %}
-            {% if planned %}
-            <span class="nav-link disabled">
-              {{ label | safe }}
-              <span class="planned-badge">Planned</span>
-            </span>
-            {% else %}
-            
-              class="nav-link{{ ' active' if request.endpoint == endpoint }}"
-              href="{{ url_for(endpoint) }}"
-              {% if request.endpoint == endpoint %}aria-current="page"{% endif %}
-            >
-              {{ label | safe }}
-            </a>
-            {% endif %}
-            {% endfor %}
-          </nav>
+    {% for endpoint, label, planned in [('main.index', 'Dashboard / Overview', false), (none, 'Data Retrieval', true), ('upload.upload_form', 'File Intake &amp; Validation', false), ('main.explorer', 'Data Explorer', false), (none, 'Facility &amp; Unit Analytics', true), (none, 'Export &amp; Downloads', true)] %}
+        {% if planned %}
+            <span class="nav-link disabled">{{ label | safe }} <span class="planned-badge">Planned</span></span>
+        {% else %}
+            <a class="nav-link{{ ' active' if request.endpoint == endpoint }}" href="{{ url_for(endpoint) }}">{{ label | safe }}</a>
+        {% endif %}
+    {% endfor %}
+</nav>
+      
 
           <div class="sidebar-status">
             <span
