@@ -19,6 +19,11 @@
   const resetBtn = document.getElementById("filter-reset");
   const headers = document.querySelectorAll("#records-table th.sortable");
 
+  const chartYearSelect = document.getElementById("chart-year");
+  const chartCanvas = document.getElementById("co2-chart");
+  const chartStatusEl = document.getElementById("chart-status");
+  let chartInstance = null;
+
   if (!tbody) return;
 
   function facilityUrl(id) {
@@ -27,6 +32,8 @@
   function unitUrl(id) {
     return window.EXPLORER_URLS.unitTemplate.replace(/\/0$/, "/" + id);
   }
+
+  // --- Table ---
 
   function updateHeaderIndicators() {
     headers.forEach((th) => {
@@ -98,20 +105,6 @@
       });
   }
 
-  function loadYears() {
-    fetch(window.EXPLORER_URLS.years)
-      .then((response) => response.json())
-      .then((years) => {
-        years.forEach((year) => {
-          const opt = document.createElement("option");
-          opt.value = year;
-          opt.textContent = year;
-          yearSelect.appendChild(opt);
-        });
-      })
-      .catch((error) => console.error("Failed to load years:", error));
-  }
-
   headers.forEach((th) => {
     th.addEventListener("click", () => {
       const key = th.dataset.sort;
@@ -151,6 +144,101 @@
     state.page = 1;
     load();
   });
+
+  // --- Chart ---
+
+  function renderChart(rows) {
+    if (!chartCanvas || typeof Chart === "undefined") return;
+
+    const labels = rows.map((r) => r.facility_name);
+    const values = rows.map((r) => r.total_co2);
+
+    if (chartInstance) {
+      chartInstance.data.labels = labels;
+      chartInstance.data.datasets[0].data = values;
+      chartInstance.update();
+      return;
+    }
+
+    chartInstance = new Chart(chartCanvas.getContext("2d"), {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            label: "Total CO2 mass (short tons)",
+            data: values,
+            backgroundColor: "#14b8a6",
+          },
+        ],
+      },
+      options: {
+        indexAxis: "y",
+        responsive: true,
+        plugins: { legend: { display: false } },
+        scales: {
+          x: { beginAtZero: true, title: { display: true, text: "Short tons" } },
+        },
+      },
+    });
+  }
+
+  function loadChart() {
+    chartStatusEl.textContent = "Loading…";
+    const year = chartYearSelect.value;
+    const params = new URLSearchParams({ limit: 10 });
+    if (year) params.set("year", year);
+
+    fetch(`${window.EXPLORER_URLS.topFacilities}?${params.toString()}`)
+      .then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`);
+        return response.json();
+      })
+      .then((rows) => {
+        if (!rows.length) {
+          chartStatusEl.textContent = "No emissions data for this year.";
+          if (chartInstance) {
+            chartInstance.data.labels = [];
+            chartInstance.data.datasets[0].data = [];
+            chartInstance.update();
+          }
+          return;
+        }
+        renderChart(rows);
+        chartStatusEl.textContent = `Top ${rows.length} facilities for ${rows[0].year}.`;
+      })
+      .catch((error) => {
+        console.error("Failed to load chart data:", error);
+        chartStatusEl.textContent = `Could not load chart data: ${error.message}`;
+      });
+  }
+
+  chartYearSelect.addEventListener("change", loadChart);
+
+  // --- Shared: year list feeds both the table filter and the chart selector ---
+
+  function loadYears() {
+    fetch(window.EXPLORER_URLS.years)
+      .then((response) => response.json())
+      .then((years) => {
+        years.forEach((year) => {
+          const tableOpt = document.createElement("option");
+          tableOpt.value = year;
+          tableOpt.textContent = year;
+          yearSelect.appendChild(tableOpt);
+
+          const chartOpt = document.createElement("option");
+          chartOpt.value = year;
+          chartOpt.textContent = year;
+          chartYearSelect.appendChild(chartOpt);
+        });
+        loadChart();
+      })
+      .catch((error) => {
+        console.error("Failed to load years:", error);
+        loadChart();
+      });
+  }
 
   loadYears();
   load();
