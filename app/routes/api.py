@@ -270,3 +270,37 @@ def reporting_years():
         return jsonify({"error": "Database query failed", "detail": str(exc)}), 500
 
     return jsonify([int(year) for year in years])
+@api_bp.route("/emissions/states", methods=["GET"])
+def available_states():
+    """Every state code that has at least one facility on file, alphabetically."""
+    statement = (
+        select(Facility.state_code)
+        .where(Facility.state_code != "")
+        .distinct()
+        .order_by(Facility.state_code)
+    )
+    try:
+        states = db.session.execute(statement).scalars().all()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        current_app.logger.exception("states query failed")
+        return jsonify({"error": "Database query failed", "detail": str(exc)}), 500
+    return jsonify([s for s in states if s])
+
+
+@api_bp.route("/emissions/fuels", methods=["GET"])
+def available_fuels():
+    """Every distinct primary fuel type that has at least one unit on file."""
+    statement = (
+        select(Unit.primary_fuel)
+        .where(Unit.primary_fuel != "")
+        .distinct()
+        .order_by(Unit.primary_fuel)
+    )
+    try:
+        fuels = db.session.execute(statement).scalars().all()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        current_app.logger.exception("fuels query failed")
+        return jsonify({"error": "Database query failed", "detail": str(exc)}), 500
+    return jsonify([f for f in fuels if f])
