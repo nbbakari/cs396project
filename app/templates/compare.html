@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+
+{% block title %}Compare &middot; epaData{% endblock %}
+{% block breadcrumb %}Compare Units &amp; Facilities{% endblock %}
+{% block container_width %}1200px{% endblock %}
+
+{% block content %}
+<h1 class="h4 mb-1">Compare units and facilities</h1>
+<p class="page-intro mb-3">
+  Put up to 8 units or facilities side by side, year by year. Tick units in the
+  <a href="{{ url_for('main.explorer') }}">Data Explorer</a> and press <em>Compare selected</em>,
+  or enter facility IDs below to compare facility totals.
+</p>
+
+<form method="get" class="panel mb-4">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-5">
+      <label for="facility_id" class="form-label-sm">Facility IDs (totals across their units)</label>
+      <input type="text" class="form-control form-control-sm" id="facility_id" name="facility_id"
+             value="{{ facility_ids | join(', ') }}" placeholder="e.g. 6002, 2103, 1733">
+    </div>
+    <div class="col-md-4">
+      <label for="metric" class="form-label-sm">Metric</label>
+      <select class="form-select form-select-sm" id="metric" name="metric">
+        {% for key, label in metric_labels.items() %}
+        <option value="{{ key }}"{{ ' selected' if key == metric }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-3">
+      {% for key in unit_keys %}<input type="hidden" name="unit" value="{{ key }}">{% endfor %}
+      <button type="submit" class="btn btn-sm btn-primary">Update</button>
+      <a href="{{ url_for('main.compare') }}" class="btn btn-sm btn-outline-secondary">Clear</a>
+    </div>
+  </div>
+</form>
+
+{% if not entities %}
+<div class="alert alert-info">
+  Nothing selected yet. Try
+  <a href="{{ url_for('main.compare', facility_id='6002,2103,1733', metric='co2_mass') }}">three of the largest CO<sub>2</sub> emitters</a>.
+</div>
+{% else %}
+<div class="table-wrap mb-3">
+  <table class="table table-sm table-data">
+    <thead><tr><th>Type</th><th>Compared</th><th>Detail</th><th></th></tr></thead>
+    <tbody>
+      {% for e in entities %}
+      <tr>
+        <td class="small">{{ e.kind }}</td>
+        <td><a href="{{ e.url }}">{{ e.label }}</a></td>
+        <td class="small text-body-secondary">{{ e.detail }}</td>
+        <td class="text-end">
+          {% if e.kind == 'Unit' %}
+          <a class="small" href="{{ url_with(unit=unit_keys | reject('equalto', e.key[1:] | int) | list) }}">Remove</a>
+          {% else %}
+          <a class="small" href="{{ url_with(facility_id=facility_ids | reject('equalto', e.key[1:] | int) | join(',')) }}">Remove</a>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="panel mb-3">
+  <div class="panel-title">{{ metric_labels[metric] }} by reporting year{% if metric == 'operating_time' and facility_ids %} (facility values are the average across units){% endif %}</div>
+  {% if chart.labels %}
+  <div class="chart-box" style="height: 360px"><canvas id="compare-chart" role="img" aria-label="{{ metric_labels[metric] }} by year for the compared units and facilities"></canvas></div>
+  {% else %}
+  <p class="text-body-secondary small mb-0">No annual records for these selections.</p>
+  {% endif %}
+</div>
+
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h2 class="h6 text-body-secondary mb-0">Table view</h2>
+  <div class="d-flex gap-1">
+    {% if unit_keys %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('download.records', unit=unit_keys, sort='reporting_year', order='asc') }}">Download unit records (CSV)</a>{% endif %}
+    {% if facility_ids %}<a class="btn btn-sm btn-outline-secondary" href="{{ url_for('download.records', facility_id=facility_ids | join(','), level='facility', sort='reporting_year', order='asc') }}">Download facility totals (CSV)</a>{% endif %}
+  </div>
+</div>
+<div class="table-wrap">
+  <table class="table table-sm table-data">
+    <thead>
+      <tr>
+        <th scope="col">Year</th>
+        {% for e in entities %}<th scope="col" class="num">{{ e.label }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for year, values in table %}
+      <tr>
+        <td>{{ year }}</td>
+        {% for value in values %}<td class="num">{{ value | num(1) if value is not none else '—' }}</td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if entities and chart.labels %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script id="compare-data" type="application/json">{{ chart | tojson }}</script>
+<script>
+  (function () {
+    const data = JSON.parse(document.getElementById("compare-data").textContent);
+    window.EpaCharts.lineChart(document.getElementById("compare-chart"), data.labels, data.datasets, {
+      yTitle: {{ metric_labels[metric] | tojson }},
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

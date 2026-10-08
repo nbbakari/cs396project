@@ -1,0 +1,5 @@
+{# "Load shared data" button, shared by the dashboard and Settings pages. #}
+<form method="post" action="{{ url_for('settings.load_shared_data') }}"
+      onsubmit="const b = this.querySelector('button'); b.disabled = true; b.textContent = 'Loading shared data… (about a minute)';">
+  <button type="submit" class="btn btn-primary">Load shared data</button>
+</form>

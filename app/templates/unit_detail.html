@@ -1,50 +1,116 @@
 {% extends "base.html" %}
 
-{% block title %}Unit {{ unit.epa_unit_id }} &middot; epaData{% endblock %}
-{% block breadcrumb %}Unit &rsaquo; {{ unit.epa_unit_id }}{% endblock %}
-{% block container_width %}960px{% endblock %}
+{% block title %}Unit {{ unit.epa_unit_id }} &middot; {{ facility.facility_name }} &middot; epaData{% endblock %}
+{% block breadcrumb %}Unit &rsaquo; {{ facility.facility_name }} {{ unit.epa_unit_id }}{% endblock %}
+{% block container_width %}1300px{% endblock %}
 
 {% block content %}
-<p class="mb-2">
-  <a href="{{ url_for('main.facility_detail', facility_id=unit.facility_id) }}">
-    &larr; {{ unit.facility.facility_name }}
-  </a>
+<p class="mb-2 small">
+  <a href="{{ url_for('main.facility_detail', facility_id=facility.epa_facility_id) }}">&larr; {{ facility.facility_name }}</a>
 </p>
-<h1 class="h4 mb-1">Unit {{ unit.epa_unit_id }}</h1>
-<p class="text-body-secondary mb-4">
-  {{ unit.unit_type }} &middot; {{ unit.primary_fuel }}
-  {% if unit.secondary_fuel %} / {{ unit.secondary_fuel }}{% endif %}
+<h1 class="h4 mb-1">Unit {{ unit.epa_unit_id }} &middot; {{ facility.facility_name }}</h1>
+<p class="text-body-secondary mb-3">
+  {{ unit.unit_type }} &middot; {{ unit.primary_fuel }}{% if unit.secondary_fuel %} / {{ unit.secondary_fuel }}{% endif %}
+  &middot; {{ facility.state_code }}
 </p>
 
+<div class="d-flex flex-wrap gap-2 mb-4">
+  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.compare', unit=unit.internal_unit_key) }}">Compare with other units</a>
+  <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.explorer', unit=unit.internal_unit_key, sort='reporting_year', order='asc') }}">Open in explorer</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('download.records', unit=unit.internal_unit_key, sort='reporting_year', order='asc') }}">Download history (CSV)</a>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-4">
+    <div class="panel h-100">
+      <div class="panel-title">Identification</div>
+      <dl class="facts">
+        <dt>Facility</dt><dd><a href="{{ url_for('main.facility_detail', facility_id=facility.epa_facility_id) }}">{{ facility.facility_name }}</a></dd>
+        <dt>Facility ID</dt><dd>{{ facility.epa_facility_id }}</dd>
+        <dt>EPA unit ID</dt><dd>{{ unit.epa_unit_id }}</dd>
+        <dt>Internal key</dt><dd>{{ unit.internal_unit_key }}</dd>
+        <dt>State / county</dt><dd>{{ facility.state_code or '—' }}{% if facility.county %} / {{ facility.county }}{% endif %}</dd>
+        <dt>Location</dt>
+        <dd>{% if facility.latitude is not none %}{{ '%.4f' | format(facility.latitude) }}, {{ '%.4f' | format(facility.longitude) }}{% else %}&mdash;{% endif %}</dd>
+        <dt>Source category</dt><dd>{{ facility.source_category or '—' }}</dd>
+      </dl>
+      <div class="panel-title mt-3">Fuel and operation</div>
+      <dl class="facts">
+        <dt>Unit type</dt><dd>{{ unit.unit_type }}</dd>
+        <dt>Primary fuel</dt><dd>{{ unit.primary_fuel }}</dd>
+        <dt>Secondary fuel</dt><dd>{{ unit.secondary_fuel or '—' }}</dd>
+        <dt>Commercial operation</dt><dd>{{ unit.operating_date or '—' }}</dd>
+        <dt>Retired</dt><dd>{{ unit.retirement_date or '—' }}</dd>
+      </dl>
+      <p class="small text-body-secondary mt-2 mb-0">Type and fuel are as of the latest reporting year on file.</p>
+    </div>
+  </div>
+  <div class="col-lg-8">
+    <div class="panel h-100" data-metric-chart="unit-chart-data">
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <div class="panel-title mb-0">History</div>
+        <select class="form-select form-select-sm" style="width: auto" data-metric-select aria-label="Metric">
+          {% for key, label in metric_labels.items() %}
+          <option value="{{ key }}"{{ ' selected' if key == 'co2_mass' }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% if records %}
+      <div class="chart-box" style="height: 300px"><canvas role="img" aria-label="Unit history by year"></canvas></div>
+      {% else %}
+      <p class="small text-body-secondary mb-0">No annual records on file for this unit.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
 <h2 class="h6 text-body-secondary mb-2">Annual records ({{ records | length }})</h2>
-{% if not records %}
-<p class="text-body-secondary">No annual records on file for this unit.</p>
-{% else %}
-<div class="table-responsive">
-  <table class="table table-sm table-striped bg-white">
+<div class="table-wrap">
+  <table class="table table-sm table-data table-striped">
     <thead>
       <tr>
         <th>Year</th>
-        <th class="text-end">Gross load</th>
-        <th class="text-end">Heat input</th>
-        <th class="text-end">CO2</th>
-        <th class="text-end">SO2</th>
-        <th class="text-end">NOx</th>
+        <th class="num">Op. hours</th>
+        <th class="num">Gross load (MWh)</th>
+        <th class="num">Steam load (1000 lb)</th>
+        <th class="num">Heat input (MMBtu)</th>
+        <th class="num">CO₂ (tons)</th>
+        <th class="num">SO₂ (tons)</th>
+        <th class="num">NOx (tons)</th>
+        <th>SO₂ controls</th>
+        <th>NOx controls</th>
+        <th>PM controls</th>
+        <th>Programs</th>
+        <th>Source</th>
       </tr>
     </thead>
     <tbody>
-      {% for record in records %}
+      {% for record, dataset in records %}
       <tr>
         <td>{{ record.reporting_year }}</td>
-        <td class="text-end">{{ "{:,.0f}".format(record.gross_load) }}</td>
-        <td class="text-end">{{ "{:,.0f}".format(record.heat_input) }}</td>
-        <td class="text-end">{{ "{:,.1f}".format(record.co2_mass) }}</td>
-        <td class="text-end">{{ "{:,.1f}".format(record.so2_mass) }}</td>
-        <td class="text-end">{{ "{:,.1f}".format(record.nox_mass) }}</td>
+        <td class="num">{{ record.operating_time | num }}</td>
+        <td class="num">{{ record.gross_load | num }}</td>
+        <td class="num">{{ record.steam_load | num }}</td>
+        <td class="num">{{ record.heat_input | num }}</td>
+        <td class="num">{{ record.co2_mass | num(1) }}</td>
+        <td class="num">{{ record.so2_mass | num(1) }}</td>
+        <td class="num">{{ record.nox_mass | num(1) }}</td>
+        <td class="small wide-text">{{ (record.so2_control or '') | replace('|', '; ') }}</td>
+        <td class="small wide-text">{{ (record.nox_control or '') | replace('|', '; ') }}</td>
+        <td class="small wide-text">{{ (record.pm_control or '') | replace('|', '; ') }}</td>
+        <td class="small">{{ record.program_code or '' }}</td>
+        <td class="small text-nowrap"><a href="{{ url_for('main.dataset_detail', dataset_id=dataset.id) }}">#{{ dataset.id }}</a> {{ dataset.data_source }}</td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
+{% endblock %}
+
+{% block scripts %}
+{% if records %}
+<script id="unit-chart-data" type="application/json">{{ chart | tojson }}</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
 {% endif %}
 {% endblock %}

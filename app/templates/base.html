@@ -41,15 +41,35 @@
           </div>
 
           <div class="sidebar-section-label">Core modules</div>
+          {% set nav_items = [
+            ('main.index', 'Dashboard / Overview'),
+            ('retrieval.retrieval_form', 'Data Retrieval (CAMPD API)'),
+            ('upload.upload_form', 'File Intake &amp; Validation'),
+            ('main.explorer', 'Data Explorer'),
+            ('main.compare', 'Compare Units &amp; Facilities'),
+            ('download.downloads_page', 'Export &amp; Downloads'),
+            ('settings.settings_page', 'Settings &amp; API Key'),
+          ] %}
+          {# Detail pages highlight the section they belong to. #}
+          {% set section_of = {
+            'upload.review': 'upload.upload_form',
+            'main.facility_detail': 'main.explorer',
+            'main.unit_detail': 'main.explorer',
+            'main.dataset_detail': 'download.downloads_page',
+          } %}
+          {% set active_endpoint = section_of.get(request.endpoint, request.endpoint) %}
           <nav class="sidebar-nav nav flex-column gap-1">
-    {% for endpoint, label, planned in [('main.index', 'Dashboard / Overview', false), (none, 'Data Retrieval', true), ('upload.upload_form', 'File Intake &amp; Validation', false), ('main.explorer', 'Data Explorer', false), (none, 'Facility &amp; Unit Analytics', true), (none, 'Export &amp; Downloads', true)] %}
-        {% if planned %}
-            <span class="nav-link disabled">{{ label | safe }} <span class="planned-badge">Planned</span></span>
-        {% else %}
-            <a class="nav-link{{ ' active' if request.endpoint == endpoint }}" href="{{ url_for(endpoint) }}">{{ label | safe }}</a>
-        {% endif %}
-    {% endfor %}
-</nav>
+            {% for endpoint, label in nav_items %}
+            <a class="nav-link{{ ' active' if active_endpoint == endpoint }}" href="{{ url_for(endpoint) }}"
+               {% if active_endpoint == endpoint %}aria-current="page"{% endif %}>{{ label | safe }}</a>
+            {% endfor %}
+          </nav>
+
+          <div class="sidebar-section-label">Phase 2</div>
+          <nav class="sidebar-nav nav flex-column gap-1">
+            <span class="nav-link disabled">Environmental Evaluation <span class="planned-badge">Planned</span></span>
+            <span class="nav-link disabled">Multi-indicator Scoring <span class="planned-badge">Planned</span></span>
+          </nav>
       
 
           <div class="sidebar-status">
@@ -92,7 +112,7 @@
           </div>
         </header>
 
-        <main class="app-content">
+        <main class="app-content" style="max-width: {% block container_width %}1100px{% endblock %}">
           {% with messages = get_flashed_messages(with_categories=true) %}
           {% if messages %}
           <div class="mb-4">

@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Data retrieval &middot; epaData{% endblock %}
+{% block breadcrumb %}Data Retrieval{% endblock %}
+
+{% block content %}
+<h1 class="h4 mb-1">Retrieve data from EPA CAMPD</h1>
+<p class="page-intro mb-4">
+  Pull annual, unit-level emissions and operating data from the Clean Air
+  Markets Program Data API. The request runs on the server; the result is kept
+  as a file and shown for review before anything is imported.
+</p>
+
+{% if not api_key_configured %}
+<div class="panel mb-4 border-primary" id="connect-api-key">
+  <div class="panel-title text-primary">Step 1 &middot; Connect your CAMPD API key</div>
+  <p class="mb-2">Retrieving data from the EPA needs your own free API key. You only do this once.</p>
+  <ol class="small mb-3 ps-3">
+    <li class="mb-1">
+      <a href="{{ api_key_signup_url }}" target="_blank" rel="noopener" class="fw-semibold">Request a key on the EPA&rsquo;s CAM API portal</a>
+      (opens in a new tab). Enter your name and email; the key arrives by email within a minute.
+    </li>
+    <li>Paste the key here. epaData checks it with the EPA and saves it on this computer.</li>
+  </ol>
+  {% set next_url = url_for('retrieval.retrieval_form') %}
+  {% include "_api_key_form.html" %}
+  <p class="small text-body-secondary mb-0">
+    No key? You can still <a href="{{ url_for('upload.upload_form') }}">upload a file</a>
+    you downloaded from <a href="https://campd.epa.gov/data/custom-data-download" target="_blank" rel="noopener">CAMPD Custom Data Download</a>.
+  </p>
+</div>
+{% else %}
+<p class="small text-body-secondary mb-3">
+  Using your API key ending <code>{{ api_key_masked }}</code> &middot;
+  <a href="{{ url_for('settings.settings_page') }}#api-key">change</a>
+</p>
+{% endif %}
+
+<div class="row g-4 mb-5">
+  <div class="col-lg-7">
+    <form method="post" action="{{ url_for('retrieval.run_retrieval') }}" class="panel" id="retrieval-form">
+      <div class="panel-title">Filters</div>
+      <div class="row g-3">
+        <div class="col-sm-4">
+          <label for="year" class="form-label-sm">Reporting year <span class="text-danger">*</span></label>
+          <input type="number" class="form-control" id="year" name="year" required
+                 min="{{ first_year }}" max="{{ last_year }}" value="{{ form.get('year', '') }}">
+        </div>
+        <div class="col-sm-8">
+          <label for="state" class="form-label-sm">State</label>
+          <select class="form-select" id="state" name="state">
+            <option value="">All states</option>
+            {% for code, name in states %}
+            <option value="{{ code }}"{{ ' selected' if form.get('state') == code }}>{{ code }} &mdash; {{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <label for="facility_ids" class="form-label-sm">Facility ID(s)</label>
+          <input type="text" class="form-control" id="facility_ids" name="facility_ids"
+                 placeholder="e.g. 6002 or 6002, 1355" value="{{ form.get('facility_ids', '') }}">
+        </div>
+        <div class="col-sm-6">
+          <label for="fuel_type" class="form-label-sm">Fuel type</label>
+          <select class="form-select" id="fuel_type" name="fuel_type">
+            <option value="">Any fuel</option>
+            {% for value in fuel_types %}<option{{ ' selected' if form.get('fuel_type') == value }}>{{ value }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-sm-6">
+          <label for="unit_type" class="form-label-sm">Unit type</label>
+          <select class="form-select" id="unit_type" name="unit_type">
+            <option value="">Any unit type</option>
+            {% for value in unit_types %}<option{{ ' selected' if form.get('unit_type') == value }}>{{ value }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <label for="control_technology" class="form-label-sm">Pollution-control technology</label>
+          <select class="form-select" id="control_technology" name="control_technology">
+            <option value="">Any (or none)</option>
+            {% for value in controls %}<option{{ ' selected' if form.get('control_technology') == value }}>{{ value }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-12">
+          <div class="form-check">
+            <input class="form-check-input" type="checkbox" id="attributes" name="attributes" value="on"
+                   {{ 'checked' if form.get('attributes') }}>
+            <label class="form-check-label small" for="attributes">
+              Also retrieve facility attributes (county, latitude/longitude,
+              source category, commercial operation and retirement dates)
+            </label>
+          </div>
+        </div>
+        <div class="col-12">
+          <label for="dataset_name" class="form-label-sm">Dataset name <span class="text-body-secondary">(optional)</span></label>
+          <input type="text" class="form-control" id="dataset_name" name="dataset_name" maxlength="150"
+                 placeholder="Defaults to a name built from the filters" value="{{ form.get('dataset_name', '') }}">
+        </div>
+      </div>
+      <div class="d-flex align-items-center gap-3 mt-4">
+        <button type="submit" class="btn btn-primary" id="retrieve-button" {{ 'disabled' if not api_key_configured }}>
+          <span class="spinner-border spinner-border-sm me-1 d-none" role="status" aria-hidden="true"></span>
+          Retrieve
+        </button>
+        <span class="small text-body-secondary" id="retrieve-status" aria-live="polite">
+          {% if api_key_configured %}A full year for every state takes 10&ndash;60 seconds.{% else %}Connect your API key above first.{% endif %}
+        </span>
+      </div>
+    </form>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="panel h-100">
+      <div class="panel-title">How retrieval works</div>
+      <ol class="small text-body-secondary ps-3 mb-0">
+        <li class="mb-2">The server calls CAMPD&rsquo;s <code>emissions/apportioned/annual</code>
+          endpoint with the filters above, and (optionally) <code>facilities/attributes</code>
+          for location and dates, then merges the two by facility, unit and year.</li>
+        <li class="mb-2">The EPA API key is read from the server&rsquo;s environment and sent only
+          in a request header to the EPA. It never appears in pages, URLs, logs or the database.</li>
+        <li class="mb-2">The response is kept as a CSV file, validated, and shown on the review
+          page with every rejected or flagged row. Nothing is imported until you approve.</li>
+        <li class="mb-2">The query parameters, endpoint, date and record counts are stored as the
+          dataset&rsquo;s provenance.</li>
+        <li>Approved data is saved in this computer&rsquo;s database only; it is not
+          sent to the team&rsquo;s shared database.</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+{% if pending %}
+<h2 class="h6 text-body-secondary mb-2">Awaiting review</h2>
+<ul class="list-group mb-4">
+  {% for staged in pending %}
+  <li class="list-group-item d-flex justify-content-between align-items-center">
+    <span>{{ staged.dataset_name or staged.original_filename }} <span class="small text-body-secondary">&middot; retrieved {{ staged.uploaded_at | when }}</span></span>
+    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('upload.review', file_id=staged.id) }}">Review</a>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+<h2 class="h6 text-body-secondary mb-2">Retrieval history</h2>
+{% if not history %}
+<p class="text-body-secondary">No API retrievals yet.</p>
+{% else %}
+<div class="table-wrap">
+  <table class="table table-sm table-data">
+    <thead>
+      <tr>
+        <th scope="col">Dataset</th>
+        <th scope="col">Query parameters</th>
+        <th scope="col">Retrieved</th>
+        <th scope="col">Years</th>
+        <th scope="col" class="num">Rows returned</th>
+        <th scope="col" class="num">Imported</th>
+        <th scope="col" class="num">Rejected</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for dataset, prov in history %}
+      <tr>
+        <td><a href="{{ url_for('main.dataset_detail', dataset_id=dataset.id) }}">{{ dataset.dataset_name }}</a></td>
+        <td class="small">
+          {% for key, value in (prov.query_params | fromjson).items() %}<code>{{ key }}={{ value }}</code>{{ ' ' if not loop.last }}{% else %}<span class="text-body-secondary">not recorded</span>{% endfor %}
+        </td>
+        <td>{{ prov.retrieved_at | when }}</td>
+        <td>{{ prov.reporting_years }}</td>
+        <td class="num">{{ prov.raw_records | num }}</td>
+        <td class="num">{{ prov.accepted_records | num }}</td>
+        <td class="num">{{ prov.rejected_records | num }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    const form = document.getElementById("retrieval-form");
+    const button = document.getElementById("retrieve-button");
+    form.addEventListener("submit", function () {
+      button.disabled = true;
+      button.querySelector(".spinner-border").classList.remove("d-none");
+      document.getElementById("retrieve-status").textContent =
+        "Retrieving from the EPA… keep this page open.";
+    });
+  })();
+</script>
+{% endblock %}

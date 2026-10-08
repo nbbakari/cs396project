@@ -1,0 +1,9 @@
+{# API-key form, shared by the Settings and Data Retrieval pages. Set `next_url`
+   before including to return somewhere other than Settings. #}
+<form method="post" action="{{ url_for('settings.save_api_key') }}" class="d-flex flex-wrap gap-2 mb-2">
+  <input type="hidden" name="next" value="{{ next_url | default(url_for('settings.settings_page')) }}">
+  <label for="api_key" class="visually-hidden">CAMPD API key</label>
+  <input type="password" class="form-control" style="max-width: 28rem" id="api_key" name="api_key"
+         autocomplete="off" spellcheck="false" placeholder="Paste your CAMPD API key" required>
+  <button type="submit" class="btn btn-primary">Check and save key</button>
+</form>

@@ -1,239 +1,350 @@
 # epaData
 
-A Flask web application for retrieving, storing, and managing emissions data
-published by the U.S. Environmental Protection Agency (EPA).
+**EPA Data Management, Evaluation, and Visualization System** — a Flask web
+application for retrieving, validating, storing, searching, comparing and
+downloading U.S. power-sector emissions data published by the Environmental
+Protection Agency.
 
-The application ingests unit-level emissions and operating data from the EPA's
-**Clean Air Markets Program Data (CAMPD)** service and normalises it into a
-relational database, so that facility, unit, and annual emissions figures can be
-queried consistently across reporting years.
+Data comes from the EPA **Clean Air Markets Program Data (CAMPD)** service,
+either retrieved directly from the CAMPD API or uploaded as CSV/Excel extracts,
+and is normalised into a relational SQLite database. Every record is traceable
+to the retrieval or upload it came from, and every source row that was not
+imported is kept in a data-quality report.
 
-## Project status — Phase 1
+Built for CS396 coursework.
 
-Phase 1 is scoped to **data management and retrieval**: establishing the database
-schema, the ingestion pipeline, and the provenance tracking that later phases
-build on. Analysis, visualisation, and the public-facing interface are out of
-scope for this phase.
+## Contents
 
-Phase 1 delivers:
+- [Project status](#project-status)
+- [Features](#features)
+- [Quick start](#quick-start)
+- [Team setup](#team-setup)
+- [Environment variables](#environment-variables)
+- [Loading data](#loading-data)
+- [Pages](#pages)
+- [Search reference](#search-reference)
+- [Validation rules](#validation-rules)
+- [Data model](#data-model)
+- [Units, assumptions and limitations](#units-assumptions-and-limitations)
+- [JSON API](#json-api)
+- [Running the tests](#running-the-tests)
+- [Project structure](#project-structure)
+- [Troubleshooting](#troubleshooting)
+- [Data sources and attribution](#data-sources-and-attribution)
 
-- A normalised SQLAlchemy schema covering datasets, facilities, units, and annual records
-- Versioned schema migrations via Flask-Migrate / Alembic
-- Retrieval of CAMPD extracts (API and bulk CSV/Excel files)
-- Ingestion provenance — every annual record is traceable to the dataset it came from
-- Data integrity constraints preventing duplicate annual entries per unit
+## Project status
 
-## Data model
-
-| Model | Table | Purpose |
+| Phase | Scope | Status |
 | --- | --- | --- |
-| `Dataset` | `datasets` | One ingestion run: source, reporting year, retrieval date, and accepted/rejected record counts |
-| `Facility` | `facilities` | A plant, keyed by its EPA-assigned facility ID, with location and source category |
-| `Unit` | `units` | A generating unit belonging to a facility, with fuel types and service dates |
-| `AnnualRecord` | `annual_records` | Annual operating and emissions totals (CO₂, SO₂, NOₓ) for one unit |
+| **1. Data management** | Retrieval, upload, validation, storage, search, display, download | **Complete** |
+| 2. Evaluation | TRACI characterization factors, indicators, weighting scenarios, multi-indicator scoring | Planned |
 
-```
-Dataset  1 ──── * AnnualRecord * ──── 1  Unit  * ──── 1  Facility
-```
+## Features
 
-A unique constraint on `(unit_id, reporting_year)` guarantees that a unit cannot
-have two annual records for the same year.
+| Requirement | How epaData meets it |
+| --- | --- |
+| **Data retrieval** | Retrieval page calls the CAMPD API on the server with filters for reporting year, state, facility, fuel type, unit type and control technology. Facility attributes (county, coordinates, source category, operation and retirement dates) are fetched and merged. The API key lives only in the server environment. |
+| **Retrieval provenance** | Each retrieval stores the endpoint, query parameters, date, record counts and reporting years, plus the raw response as a CSV file. |
+| **File upload** | Drag-and-drop or file picker for `.csv` and `.xlsx`; extension and size (32 MB) checked; file read with pandas; columns mapped to the schema; preview and validation report; **approve or cancel**; original file kept. |
+| **No silent discards** | Every rejected or modified row is recorded with its source row number, field, reason and the original row, and is downloadable as a report. |
+| **Database** | SQLite via SQLAlchemy 2.0 and Alembic migrations, with foreign keys enforced, unique constraints on facility-unit and unit-year, CHECK constraints on impossible values, and indexes on searched columns. |
+| **Search** | 13 basic filters, 6 range filters, multi-criteria combinations, top-N/bottom-N, facility-level totals, group-and-rank (e.g. top emitter per state), facility/unit comparison and historical (multi-year) search. Results are paginated, sortable, linked to detail pages, downloadable, and fully described by the URL. |
+| **Display** | Dashboard, retrieval, upload/review, explorer, compare, facility, unit, dataset and download pages. |
+| **Download** | CSV (and Excel) for complete datasets, search results, selected facilities or units, valid records, invalid-record reports, warnings and provenance. |
 
-## Project structure
+## Quick start
 
-```
-epaData/
-├── app/
-│   ├── __init__.py        # Application factory, extension setup
-│   └── models.py          # SQLAlchemy models
-├── data/                  # Local database and downloaded source files
-├── migrations/            # Alembic migration scripts
-├── tests/                 # Pytest suite
-├── .env.example           # Template for local environment variables
-├── requirements.txt
-└── run.py                 # Development entry point
-```
-
-## Prerequisites
-
-- **Python 3.10 or later** (developed and tested on Python 3.12)
-- `pip` and `venv` — both ship with the standard CPython distribution
-- Git
-- A **CAMPD API key** — free, see [Environment variables](#environment-variables)
-- Access to the project's **Supabase PostgreSQL** database (connection string and password)
-
-> Python 3.10 is the minimum because the codebase uses PEP 604 union type
-> syntax (`dict | None`).
-
-## Installation and setup
-
-### 1. Clone the repository
+Requires **Python 3.10+** (developed on 3.12) and Git.
 
 ```bash
 git clone https://github.com/nbbakari/cs396project.git
 cd cs396project
-```
 
-### 2. Create and activate a virtual environment
-
-**macOS / Linux**
-
-```bash
 python3 -m venv .venv
-source .venv/bin/activate
-```
-
-**Windows (PowerShell)**
-
-```powershell
-py -m venv .venv
-.venv\Scripts\Activate.ps1
-```
-
-Your shell prompt should now be prefixed with `(.venv)`. Run every command below
-with the environment active; use `deactivate` to exit it.
-
-### 3. Install dependencies
-
-```bash
+source .venv/bin/activate            # Windows: .venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+
+cp .env.example .env                 # Windows: Copy-Item .env.example .env
+
+flask run                            # http://127.0.0.1:5000/
 ```
+
+The local database (`data/epadata.db`) is created and migrated automatically
+on the first page load (`flask db upgrade` does the same by hand). It starts
+empty: load the team's shared data from the dashboard, or add your own from
+the **Data Retrieval** and **Upload** pages ([Loading data](#loading-data)).
+
+Use `flask run --port 5001` if port 5000 is taken (on macOS it is often used by
+AirPlay Receiver).
+
+## Team setup
+
+The team keeps one **shared database** on Supabase with the common data
+(2015–2025, about 47,000 records). Each person's app works on its **own local
+SQLite file**: it is seeded from the shared database once, and after that
+everything you retrieve or upload stays on your computer.
+
+For a teammate starting from a fresh clone:
+
+1. `git pull`, create the virtual environment and `pip install -r requirements.txt`.
+2. In `.env`, set `SHARED_DATABASE_URL` to the Supabase connection string the
+   team shares. (An old `DATABASE_URL=postgresql://...` line also works; the app
+   reads it as the shared database and still stores its own data in SQLite.)
+3. `flask run`, open <http://127.0.0.1:5000/> and press **Load shared data** on
+   the dashboard (about a minute). Or run `flask data pull-shared`.
+4. To retrieve from the EPA, open **Data Retrieval**: it links to the EPA's
+   key request form and has a box to paste your key. No code or `.env` editing.
+
+To publish your local data to the team (for example after loading a new
+year), run `flask data push-shared`. It brings the shared schema up to date
+and inserts only what the shared copy lacks, refreshing facility and unit
+details; it never deletes. Uploaded files and data still awaiting review are
+never published.
+
+To start over from the shared data, stop the app, delete `data/epadata.db`
+and start it again.
 
 ## Environment variables
 
-Configuration is read from a `.env` file in the project root, which is loaded at
-startup by `python-dotenv`. Copy the tracked template to create your own:
-
-**macOS / Linux**
-
-```bash
-cp .env.example .env
-```
-
-**Windows (PowerShell)**
-
-```powershell
-Copy-Item .env.example .env
-```
-
-Then open `.env` and set the values:
+Configuration is read from `.env` in the project root by `python-dotenv`.
+`.env` is git-ignored and must never be committed.
 
 | Variable | Required | Description |
 | --- | --- | --- |
-| `FLASK_APP` | Yes | Entry point for the Flask CLI. Leave as `run.py`. |
-| `FLASK_DEBUG` | No | Set to `1` for the auto-reloading development server. |
-| `SECRET_KEY` | Yes | Flask session signing key. Use any long random string. |
-| `CAMPD_API_KEY` | Yes | Your EPA CAMPD API key (see below). |
-| `DATABASE_URL` | Yes | PostgreSQL connection string for the Supabase database. The app refuses to start without it. |
-| `CAMPD_API_BASE_URL` | No | CAMPD API root. Defaults to `https://api.epa.gov/easey`. |
+| `FLASK_APP` | Yes | Leave as `run.py`. |
+| `FLASK_DEBUG` | No | `1` for the auto-reloading development server. |
+| `SECRET_KEY` | Yes | Flask session signing key; any long random string. |
+| `CAMPD_API_KEY` | For retrieval | Your EPA CAMPD API key. Usually set from the **Settings** page, which writes it here. Used only server-side, in a request header. |
+| `SHARED_DATABASE_URL` | For team data | The team's Supabase connection string, used to seed an empty local database and by `flask data push-shared`. |
+| `DATABASE_URL` | No | A different SQLite file for the app's own data. A PostgreSQL URL here is treated as `SHARED_DATABASE_URL` (older `.env` files). |
+| `UPLOAD_FOLDER` | No | Where original files and API responses are kept. Default `data/uploads`. |
+| `MAX_UPLOAD_MB` | No | Upload size limit in MB. Default `32`. |
+| `CAMPD_API_BASE_URL` | No | Defaults to `https://api.epa.gov/easey`. |
 
-### Database connection
+**Getting a CAMPD API key:** open **Data Retrieval** (or **Settings**) in the
+app. It links to the EPA's
+[key request form](https://www.epa.gov/power-sector/cam-api-portal#request-api-key);
+the key is free and arrives by email within a minute. Paste it into the box:
+the app checks it with the EPA and saves it as `CAMPD_API_KEY` in this
+computer's `.env`. Pages only ever show its last four characters; the key is
+never sent to the browser, written to a URL or log, stored in the database, or
+committed to Git.
 
-`DATABASE_URL` points at the project's Supabase PostgreSQL instance via the
-session pooler:
+## Loading data
 
-```dotenv
-DATABASE_URL=postgresql://postgres.qzoamxjwkisdvhzjyqfx:[YOUR-PASSWORD]@aws-0-us-east-1.pooler.supabase.com:5432/postgres
-```
+### In the browser
 
-Replace `[YOUR-PASSWORD]` — brackets included — with the database password from
-the Supabase dashboard (**Project Settings → Database**). Edit this in your local
-`.env` only. `.env.example` is committed to the repository, so a password written
-there would be published to GitHub on your next push.
+1. **Data Retrieval** — choose a year and optional filters, then *Retrieve*.
+   A full national year takes 10–60 seconds.
+2. **File Intake & Validation** — drag in a CAMPD CSV/XLSX export.
 
-Port `5432` is the pooler's session mode, which is what migrations need. Port
-`6543` is transaction mode and does not support the prepared statements
-SQLAlchemy issues by default.
+Both lead to the **review page**: summary counts, column mapping, every issue
+found, and a preview. Approve to import, or discard. Approved imports appear
+under **Export & Downloads** with their provenance and quality report.
 
-#### Password encoding
+### From the command line
 
-If the password contains any of `@ : / ? # [ ] %`, it must be percent-encoded or
-the URL will be misparsed — typically surfacing as
-`ValueError: invalid literal for int() with base 10`. Generate an encoded value
-with:
-
-```bash
-python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" 'your password'
-```
-
-Paste the result in place of `[YOUR-PASSWORD]`. Passwords made only of letters
-and digits need no encoding.
-
-### Obtaining a CAMPD API key
-
-1. Visit the EPA **CAM API Portal**: <https://www.epa.gov/power-sector/cam-api-portal>
-2. Register for an API key using your email address — the key is free and issued immediately.
-3. Paste the key into `.env`:
-
-   ```dotenv
-   CAMPD_API_KEY=your-actual-key-here
-   ```
-
-`.env` is listed in `.gitignore` and must **never** be committed. Only
-`.env.example`, which holds placeholders, belongs in version control.
-
-## Database initialisation
-
-With the virtual environment active and `.env` in place, apply the migrations to
-build the schema:
+CLI imports skip the review page but use the same validation, so their
+quality reports are complete.
 
 ```bash
+flask campd fetch 2023 --state KY                 # one query
+flask campd fetch 2023 --fuel Coal --unit-type "Tangentially-fired"
+flask campd load-years 2015 2025                  # every year in a range
+flask campd attributes 2016                       # fill blank county/location/dates
+```
+
+The CAMPD API allows about one request per second per key; the client spaces
+its calls and retries rate-limited requests automatically.
+
+### From the shared database
+
+```bash
+flask data pull-shared      # seed an empty local database (same as the dashboard button)
+flask data push-shared      # publish this database to the shared one (asks to confirm)
+```
+
+Dataset IDs are preserved, so dataset numbers match across the team. A shared
+database still on the original schema is also accepted; provenance records are
+then created from what that schema stored.
+
+## Pages
+
+| Page | URL | Contents |
+| --- | --- | --- |
+| Dashboard | `/` | Introduction, coverage (facilities, units, records, states, years, rejected rows), per-year summary, data sources, navigation, recent imports |
+| Data retrieval | `/retrieve` | CAMPD filters, retrieval status, pending reviews, retrieval history with query parameters and counts |
+| Upload | `/upload` | Drag-and-drop upload, supported formats, required columns, validation rules |
+| Review | `/review/<id>` | Validation report, column mapping, issues, preview, approve/discard |
+| Data explorer | `/explorer` | Search form, example searches, query description, sortable paginated results, selection, chart |
+| Compare | `/compare` | Up to 8 units or facilities year by year on any metric, with chart and table |
+| Facility | `/facility/<id>` | Location, units, annual totals, chart |
+| Unit | `/unit/<key>` | Identification, fuel, operating dates, history chart, every annual record with controls, programs and source dataset |
+| Dataset | `/dataset/<id>` | Provenance, counts, downloads, paginated data-quality report |
+| Downloads | `/downloads` | Search, selection, dataset, report and provenance downloads |
+| Settings | `/settings` | CAMPD API key (check, save, replace, remove), local database, loading shared data |
+
+## Search reference
+
+Every explorer search is a URL, so it can be bookmarked, shared or downloaded.
+The **Download CSV** button on the explorer and `/download/records` accept the
+same parameters and return exactly the rows the search shows.
+
+**Basic filters.** Text filters ignore case. "Contains" filters also accept
+`none` (no value) and `any` (has a value).
+
+| Parameter | Matches |
+| --- | --- |
+| `facility_id` | EPA facility ID(s), comma-separated |
+| `facility_name`, `county` | contains |
+| `unit_id` | EPA unit ID, exact |
+| `state` | state code(s), comma-separated |
+| `year` | year(s), comma-separated; or `year_min` / `year_max` |
+| `primary_fuel`, `secondary_fuel`, `unit_type` | contains |
+| `so2_control`, `nox_control`, `pm_control`, `program` | contains |
+| `unit`, `dataset` | internal unit key(s) / dataset ID(s) |
+
+**Ranges** (inclusive; use `_min` and/or `_max`): `op_time` (hours),
+`gross_load` (MWh), `heat_input` (MMBtu), `co2`, `so2`, `nox` (short tons).
+
+**Result shape**
+
+| Parameter | Effect |
+| --- | --- |
+| `level=facility` | One row per facility-year, metrics summed over its units. Range filters then apply to the totals (operating time still filters units). |
+| `sort`, `order` | Column and `asc`/`desc`. |
+| `limit` | Top-N (`order=desc`) or bottom-N (`order=asc`). |
+| `group_by`, `per_group` | Rank within each `state`, `year`, `primary_fuel`, `unit_type` or `facility`. |
+| `page`, `per_page` | Pagination (10/25/50/100). |
+
+**Examples** (also one click away under *Example searches* in the explorer):
+
+| Question | Query string |
+| --- | --- |
+| Coal units in KY in 2025 with CO₂ > 500,000 tons | `state=KY&year=2025&primary_fuel=coal&co2_min=500000` |
+| Top 10 facilities by CO₂ | `level=facility&year=2025&sort=co2_mass&limit=10` |
+| Top 20 units by gross generation | `year=2025&sort=gross_load&limit=20` |
+| Lowest-SO₂ units that ran > 5,000 h | `year=2025&op_time_min=5000&sort=so2_mass&order=asc&limit=10` |
+| Top CO₂ facility in each state | `level=facility&year=2025&group_by=state&sort=co2_mass` |
+| Highest-generation natural-gas units | `primary_fuel=natural gas&year=2025&sort=gross_load&limit=10` |
+| One unit from 2015 to 2025 | `facility_id=6002&unit_id=1&year_min=2015&year_max=2025&sort=reporting_year&order=asc` |
+
+The explorer also shows each search as a readable query, for example:
+
+```
+WHERE state_code = 'KY'
+  AND reporting_year = 2025
+  AND primary_fuel CONTAINS 'coal'
+  AND co2_mass >= 500,000
+ORDER BY co2_mass DESC
+```
+
+## Validation rules
+
+Implemented in `app/services/validation.py`. Row numbers count the header as row 1.
+
+**Rejected** (not imported; listed in the report with the original row):
+
+| Issue type | Rule |
+| --- | --- |
+| `missing_key` | Facility ID, unit ID or year is blank |
+| `invalid_value` | Key is not a whole number, or a metric is not a number |
+| `out_of_range` | Year before 1995 (start of CAMPD reporting) or in the future; operating time above 8,784 h |
+| `negative_value` | Operating time, gross/steam load, heat input or CO₂/SO₂/NOₓ mass below 0 |
+| `duplicate_in_file` | Same facility, unit and year as a later row (the later row is kept) |
+| `already_stored` | That unit-year is already in the database (the stored record is kept) |
+
+**Imported with a warning:**
+
+| Issue type | Rule |
+| --- | --- |
+| `defaulted_to_zero` | A required metric was blank and recorded as 0 |
+| `invalid_value` / `out_of_range` | Invalid state code, coordinate or date — left blank |
+| `truncated` | Text longer than its database column |
+
+A missing **required column** (facility ID, unit ID or year) blocks the whole
+file; a missing metric column is shown on the review page before approval.
+
+## Data model
+
+```
+Dataset 1──* AnnualRecord *──1 Unit *──1 Facility
+   ├──1 DataProvenance
+   ├──1 UploadedFile
+   └──* DataQualityIssue
+```
+
+| Table | Purpose | Key constraints |
+| --- | --- | --- |
+| `datasets` | One import: name, source, reporting year, date, file name, raw/accepted counts, notes | |
+| `facilities` | EPA facility ID, name, state, county, latitude, longitude, source category | PK = EPA facility ID |
+| `units` | Internal key, facility, EPA unit ID, type, primary/secondary fuel, operating and retirement dates | unique (facility, EPA unit ID) |
+| `annual_records` | One unit-year: operating time, gross/steam load, heat input, CO₂/SO₂/NOₓ mass, SO₂/NOₓ/PM controls, program codes | unique (unit, year); CHECK non-negative, year range, hours ≤ 8,784 |
+| `uploaded_files` | The file as received (or saved API response): stored name, size, SHA-256, status `staged`/`imported`/`discarded` | |
+| `data_provenance` | Per dataset: source, endpoint, query parameters, file hash, years, raw/accepted/rejected/warning counts | unique dataset |
+| `data_quality_issues` | Per problem row: source row, severity, type, field, message, raw keys, original row (JSON) | index (dataset, severity) |
+
+Foreign keys cascade on delete. SQLite does not enforce foreign keys by
+default; the app turns enforcement on for every connection. Deleting a dataset
+removes its records, report and stored file, then any units and facilities
+left with no records.
+
+Indexed for search: facility name, state and county; unit ID, type and primary
+fuel; reporting year, operating time, gross load, heat input and CO₂/SO₂/NOₓ mass.
+
+Schema changes are managed with Flask-Migrate:
+
+```bash
+flask db migrate -m "describe the change"   # review the script it writes!
 flask db upgrade
+flask db check                              # confirms models and migrations match
 ```
 
-This creates all four tables in the Supabase database at the latest revision. No
-local PostgreSQL install is needed — the connection is made to Supabase directly.
+## Units, assumptions and limitations
 
-After changing a model in `app/models.py`, generate and apply a new migration:
+**Units (as reported by CAMPD):** operating time in hours; gross load in MWh;
+steam load in 1000 lb; heat input in MMBtu; CO₂, SO₂ and NOₓ mass in short tons.
+Downloads put the unit in each column name (e.g. `co2_mass_short_tons`).
 
-```bash
-flask db migrate -m "describe your change"
-flask db upgrade
-```
+**Assumptions**
 
-Always review the generated script in `migrations/versions/` before applying it —
-Alembic's autogenerate is a starting point, not a guarantee.
+- CAMPD *apportioned annual* emissions are used: one row per unit per year.
+- A blank required metric is recorded as 0 and flagged. CAMPD leaves metrics
+  blank for units that did not operate, and leaves CO₂/SO₂ blank for units
+  that report only NOₓ (e.g. ozone-season programs); in those cases 0 means
+  "not reported", not "measured zero". The warning in the quality report marks them.
+- A unit's type and fuels are those of the **latest** reporting year imported;
+  per-year controls and program codes are kept on each annual record.
+- Facility-level totals sum the units' values for a year. Operating time is
+  not summed (it is per unit); in comparisons, facility operating time is the
+  average across units.
+- Retirement dates are parsed from CAMPD's `operatingStatus` text
+  (e.g. "Operating (Retired 06/01/2020)").
 
-Useful additional commands:
+**Limitations**
 
-```bash
-flask db current    # show the revision the database is on
-flask db history    # list all revisions
-flask db downgrade  # roll back one revision
-```
+- Hourly data, mercury (Hg) and emission rates are not stored in Phase 1.
+- Historical fuel switches (e.g. coal-to-gas) are not tracked per year on the unit.
+- Retrieval runs during the web request (no background job queue); a full
+  national year takes up to about a minute.
+- Datasets imported before row-level quality tracking (copied from the earlier
+  PostgreSQL database) have counts but no per-row issues or stored original file.
+- There is no user authentication; the app is intended for local, single-team
+  use. Anyone who can open the app can change its saved API key.
+- The shared database is a starting point, not a live sync: data a teammate
+  adds locally reaches others only when it is pushed and they reload.
 
-## Running the development server
+## JSON API
 
-```bash
-flask run
-```
+All responses are JSON, including errors (`{"error": ..., "detail": ...}`).
 
-The application starts at <http://127.0.0.1:5000/>, which returns a JSON health
-check:
+| Endpoint | Description |
+| --- | --- |
+| `GET /api/emissions/records` | Explorer search as JSON; accepts every [search parameter](#search-reference); `400` lists invalid parameters |
+| `GET /api/emissions/top-facilities?year=&limit=` | Facilities ranked by total CO₂ for one year (latest by default) |
+| `GET /api/emissions/years` | Reporting years with data, newest first |
 
-```json
-{ "application": "epaData", "status": "ok" }
-```
-
-With `FLASK_DEBUG=1` set in `.env`, the server reloads automatically on code
-changes. Use `flask run --port 5001` if port 5000 is already in use — on macOS it
-is often occupied by AirPlay Receiver.
-
-Alternatively, run the entry point directly:
-
-```bash
-python run.py
-```
-
-### Interactive shell
-
-`flask shell` opens a Python shell with the application context and all models
-already imported:
-
-```bash
-flask shell
->>> Facility.query.count()
-```
+See `CONNECT.md` for response shapes and front-end integration notes.
 
 ## Running the tests
 
@@ -241,46 +352,66 @@ flask shell
 pytest
 ```
 
-The suite is empty as of Phase 1 — `pytest` will report `no tests ran` until the
-first test module lands in `tests/`. Tests use `pytest-flask`, which expects an
-`app` fixture in `tests/conftest.py`; the application factory accepts a config
-override for this, so a fixture can point it at an in-memory database:
+The suite (59 tests) runs against an in-memory SQLite database and a temporary
+upload folder, and mocks the CAMPD API, so it needs no network or `.env`. It
+covers every validation rule, ingestion and re-import, database constraints,
+the search builder (filters, ranges, top-N, facility totals, group-and-rank,
+history), the upload → review → approve/cancel flow, retrieval, the API-key
+settings, a push/pull round trip through a shared database, every page, and
+every download.
 
-```python
-create_app({"SQLALCHEMY_DATABASE_URI": "sqlite:///:memory:"})
+## Project structure
+
 ```
-
-## Technology stack
-
-| Component | Library |
-| --- | --- |
-| Web framework | Flask |
-| ORM | Flask-SQLAlchemy (SQLAlchemy 2.0 declarative syntax) |
-| Migrations | Flask-Migrate (Alembic) |
-| Configuration | python-dotenv |
-| Data processing | pandas, openpyxl |
-| Testing | pytest, pytest-flask |
-| Database | PostgreSQL (Supabase) |
+epaData/
+├── app/
+│   ├── __init__.py          # app factory, SQLite foreign keys, blueprints
+│   ├── models.py            # SQLAlchemy models (7 tables)
+│   ├── cli.py               # flask campd ..., flask data ...
+│   ├── templating.py        # Jinja filters and URL helpers
+│   ├── routes/
+│   │   ├── main.py          # dashboard, explorer, compare, detail pages
+│   │   ├── retrieval.py     # CAMPD retrieval page
+│   │   ├── upload.py        # upload, review, approve, cancel
+│   │   ├── download.py      # downloads page and CSV/Excel exports
+│   │   ├── settings.py      # API key and shared-data settings
+│   │   └── api.py           # JSON endpoints
+│   ├── services/
+│   │   ├── validation.py    # reading, column mapping, validation rules
+│   │   ├── ingest.py        # staging, import, provenance, enrichment
+│   │   ├── campd.py         # CAMPD API client
+│   │   ├── search.py        # explorer query builder
+│   │   ├── shared.py        # push to / pull from the shared database
+│   │   └── exports.py       # CSV / Excel responses
+│   ├── templates/           # Jinja templates (Bootstrap 5)
+│   └── static/              # CSS, JavaScript (Chart.js charts)
+├── data/                    # epadata.db and uploads/ (git-ignored)
+├── migrations/              # Alembic migrations
+├── tests/                   # pytest suite
+├── sync_campd.py            # legacy wrapper for `flask campd fetch`
+├── requirements.txt
+└── run.py
+```
 
 ## Troubleshooting
 
-| Symptom | Cause and fix |
+| Symptom | Fix |
 | --- | --- |
-| `Error: Could not locate a Flask application` | `FLASK_APP` is unset — confirm `.env` exists and contains `FLASK_APP=run.py`. |
-| `Error: Can't locate revision identified by ...` | The database's `alembic_version` row references a revision not in `migrations/versions/`. Pull the latest migrations before running `flask db upgrade`. |
-| `Target database is not up to date` on `flask db migrate` | Run `flask db upgrade` first, then retry the migration. |
-| `ModuleNotFoundError: No module named 'flask'` | The virtual environment is not active, or dependencies are not installed. |
-| Port 5000 already in use | Run `flask run --port 5001`. |
-| `RuntimeError: DATABASE_URL is not set` | `.env` is missing or has no `DATABASE_URL`. Copy `.env.example` to `.env` and fill it in. |
-| `ModuleNotFoundError: No module named 'psycopg2'` | The PostgreSQL driver is missing. Run `pip install -r requirements.txt`. |
-| `ValueError: invalid literal for int() with base 10` | The password in `DATABASE_URL` contains characters that need percent-encoding — see [Password encoding](#password-encoding). |
-| `password authentication failed for user` | `[YOUR-PASSWORD]` was never replaced, or the password is wrong. Reset it in the Supabase dashboard under **Project Settings → Database**. |
+| `Could not locate a Flask application` | `.env` is missing or lacks `FLASK_APP=run.py`. |
+| `no such table: ...` | Run `flask db upgrade`. |
+| `Can't locate revision identified by ...` | Pull the latest `migrations/versions/`, then `flask db upgrade`. |
+| Retrieval page asks for an API key | Paste your key into the box on that page (or set `CAMPD_API_KEY` in `.env`). |
+| "The EPA rejected that key" | Copy the whole key from the EPA's email; it is 40 letters and digits. |
+| "already has data, so shared data was not loaded" | Stop the app, delete `data/epadata.db`, start it again, and load. |
+| Could not load the shared data | Check `SHARED_DATABASE_URL` (password percent-encoded if it has `@ : / ? #`). |
+| `CAMPD API returned HTTP 429` | Rate limit; wait a minute and retry. |
+| `CAMPD API returned HTTP 403` | The API key is wrong or inactive. |
+| Upload says "larger than the upload limit" | Raise `MAX_UPLOAD_MB`, or split the file. |
+| `ModuleNotFoundError` | Activate the virtual environment and `pip install -r requirements.txt`. |
+| Charts don't appear | They load Chart.js from a CDN; check the browser's network connection. |
 
-## Data source and attribution
+## Data sources and attribution
 
-Emissions data is published by the U.S. Environmental Protection Agency through
-the Clean Air Markets Program Data service: <https://campd.epa.gov/>
-
----
-
-Built for CS396 coursework.
+- U.S. EPA Clean Air Markets Program Data: <https://campd.epa.gov/>
+  (API: <https://www.epa.gov/power-sector/cam-api-portal>)
+- Planned (Phase 2 and later): EPA TRACI, eGRID, NEI, WebFIRE / AP-42.
