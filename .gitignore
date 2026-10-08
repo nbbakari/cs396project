@@ -15,3 +15,5 @@ __pycache__/
 
 # OS generated files
 .DS_Store
+# Original uploads and API responses kept for provenance (local data)
+data/uploads/

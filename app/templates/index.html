@@ -3,100 +3,206 @@
 {% block breadcrumb %}Dashboard / Overview{% endblock %}
 
 {% block content %}
-<div class="p-5 bg-white rounded-3 border mb-4">
+<div class="p-4 p-md-5 bg-white rounded-3 border mb-4">
   <h1 class="h3 fw-semibold mb-3">epaData</h1>
-  <p class="text-body-secondary mb-4">
-    A search engine and dashboard for U.S. power sector emissions, built on EPA
-    Clean Air Markets Program Data.
+  <p class="page-intro mb-3">
+    epaData collects, validates and stores U.S. power-sector emissions data
+    published by the Environmental Protection Agency, and makes it searchable,
+    comparable and downloadable. Every record can be traced back to the
+    retrieval or upload it came from, and every row that was rejected during
+    validation is kept in a data-quality report.
+  </p>
+  <p class="page-intro small mb-4">
+    <strong>Phase 1</strong> (this release) covers data management: retrieval,
+    upload, validation, storage, search, display and download.
+    <strong>Phase 2</strong> will add environmental evaluation with TRACI
+    characterization factors and a multi-indicator scoring model.
   </p>
   <div class="d-flex gap-2 flex-wrap">
-    <a href="{{ url_for('upload.upload_form') }}" class="btn btn-primary">
-      Upload emissions data
-    </a>
-    <a href="{{ url_for('main.explorer') }}" class="btn btn-outline-secondary">
-      Data explorer
-    </a>
+    <a href="{{ url_for('retrieval.retrieval_form') }}" class="btn btn-primary">Retrieve from CAMPD</a>
+    <a href="{{ url_for('upload.upload_form') }}" class="btn btn-outline-primary">Upload a file</a>
+    <a href="{{ url_for('main.explorer') }}" class="btn btn-outline-secondary">Explore the data</a>
   </div>
 </div>
 
 <h2 class="h6 text-body-secondary mb-3">Current coverage</h2>
 {% if coverage.record_count == 0 %}
 <div class="alert alert-info">
-  No emissions data has been ingested yet.
-  <a href="{{ url_for('upload.upload_form') }}">Upload a CAMPD extract</a> to
-  populate the dashboard.
+  <p class="mb-2"><strong>No emissions data has been imported yet.</strong></p>
+  {% if config.SHARED_DATABASE_URL %}
+  <p class="mb-2">
+    Start from the team&rsquo;s shared data (2015&ndash;2025, about 47,000 records). It is
+    copied into this computer&rsquo;s database in about a minute.
+  </p>
+  {% include "_load_shared_form.html" %}
+  <p class="small mt-2 mb-0">
+    Or <a href="{{ url_for('retrieval.retrieval_form') }}">retrieve from the CAMPD API</a> or
+    <a href="{{ url_for('upload.upload_form') }}">upload a CAMPD extract</a> yourself.
+  </p>
+  {% else %}
+  <p class="mb-0">
+    <a href="{{ url_for('retrieval.retrieval_form') }}">Retrieve a year from the CAMPD API</a>
+    or <a href="{{ url_for('upload.upload_form') }}">upload a CAMPD extract</a> to populate the
+    dashboard. To start from the team&rsquo;s shared data instead, see
+    <a href="{{ url_for('settings.settings_page') }}">Settings</a>.
+  </p>
+  {% endif %}
 </div>
 {% else %}
-<div class="row row-cols-2 row-cols-md-4 g-3 mb-5">
+<div class="row row-cols-2 row-cols-md-3 row-cols-xl-6 g-3 mb-3">
+  <div class="col"><div class="stat-panel"><div class="stat-label">Facilities</div><div class="stat-value">{{ coverage.facility_count | num }}</div></div></div>
+  <div class="col"><div class="stat-panel"><div class="stat-label">Units</div><div class="stat-value">{{ coverage.unit_count | num }}</div></div></div>
+  <div class="col"><div class="stat-panel"><div class="stat-label">Annual records</div><div class="stat-value">{{ coverage.record_count | num }}</div></div></div>
+  <div class="col"><div class="stat-panel"><div class="stat-label">States</div><div class="stat-value">{{ coverage.state_count }}</div></div></div>
   <div class="col">
     <div class="stat-panel">
-      <div class="stat-label">Facilities</div>
-      <div class="stat-value">{{ "{:,}".format(coverage.facility_count) }}</div>
+      <div class="stat-label">Years</div>
+      <div class="stat-value">{% if coverage.year_min == coverage.year_max %}{{ coverage.year_min }}{% else %}{{ coverage.year_min }}&ndash;{{ coverage.year_max % 100 }}{% endif %}</div>
+      <div class="stat-sub">{{ per_year | length }} reporting year(s)</div>
     </div>
   </div>
   <div class="col">
     <div class="stat-panel">
-      <div class="stat-label">Units</div>
-      <div class="stat-value">{{ "{:,}".format(coverage.unit_count) }}</div>
-    </div>
-  </div>
-  <div class="col">
-    <div class="stat-panel">
-      <div class="stat-label">Annual records</div>
-      <div class="stat-value">{{ "{:,}".format(coverage.record_count) }}</div>
-    </div>
-  </div>
-  <div class="col">
-    <div class="stat-panel">
-      <div class="stat-label">States covered</div>
-      <div class="stat-value">{{ coverage.state_count }}</div>
+      <div class="stat-label">Rejected rows</div>
+      <div class="stat-value">{{ coverage.rejected_rows | num }}</div>
+      <div class="stat-sub"><a href="{{ url_for('download.issues', severity='rejected') }}">download report</a></div>
     </div>
   </div>
 </div>
 
-<p class="text-body-secondary mb-5">
-  Reporting years on file:
-  <strong>
-    {% if coverage.year_min == coverage.year_max %}
-      {{ coverage.year_min }}
-    {% else %}
-      {{ coverage.year_min }}&ndash;{{ coverage.year_max }}
-    {% endif %}
-  </strong>
-</p>
+<div class="table-wrap mb-5">
+  <table class="table table-sm table-data">
+    <thead>
+      <tr>
+        <th scope="col">Reporting year</th>
+        <th scope="col" class="num">Annual records</th>
+        <th scope="col" class="num">Facilities</th>
+        <th scope="col" class="num">Total CO<sub>2</sub> (short tons)</th>
+        <th scope="col"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for year, records, facilities, co2 in per_year %}
+      <tr>
+        <td>{{ year }}</td>
+        <td class="num">{{ records | num }}</td>
+        <td class="num">{{ facilities | num }}</td>
+        <td class="num">{{ co2 | num }}</td>
+        <td class="text-end"><a href="{{ url_for('main.explorer', year=year, sort='co2_mass') }}">Explore</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 {% endif %}
 
+<h2 class="h6 text-body-secondary mb-3">What you can do</h2>
+<div class="row row-cols-1 row-cols-md-3 g-3 mb-5">
+  {% for endpoint, title, text in [
+    ('retrieval.retrieval_form', 'Retrieve data', 'Pull annual unit emissions from the EPA CAMPD API by year, state, facility, fuel, unit type or control technology.'),
+    ('upload.upload_form', 'Upload & validate', 'Import a CSV or Excel extract. Review the validation report and approve or cancel before anything is saved.'),
+    ('main.explorer', 'Search & rank', 'Combine filters and ranges, rank top or bottom N, rank within states or fuels, and follow a unit through the years.'),
+    ('main.compare', 'Compare', 'Put units or facilities side by side, year by year, on any operating or emissions metric.'),
+    ('download.downloads_page', 'Download', 'Export datasets, search results, selections, data-quality reports and provenance as CSV or Excel.'),
+    ('main.explorer', 'Drill down', 'Open any facility or unit for its location, fuel, controls, sources and full history.'),
+  ] %}
+  <div class="col">
+    <a class="nav-card" href="{{ url_for(endpoint) }}">
+      <div class="nav-card-title">{{ title }}</div>
+      <div class="nav-card-text">{{ text }}</div>
+    </a>
+  </div>
+  {% endfor %}
+</div>
+
 <h2 class="h6 text-body-secondary mb-3">Data sources</h2>
+<div class="row g-3 mb-5">
+  <div class="col-md-6">
+    <div class="panel h-100">
+      <div class="fw-semibold mb-1">EPA Clean Air Markets Program Data (CAMPD)</div>
+      <p class="small text-body-secondary mb-2">
+        Annual, unit-level operating and emissions data reported by power-sector
+        units under the Acid Rain Program (since 1995) and related programs:
+        operating time (hours), gross load (MWh), steam load (1000&nbsp;lb),
+        heat input (MMBtu), and CO<sub>2</sub>, SO<sub>2</sub> and NO<sub>x</sub>
+        mass (short tons), with fuel types, control technologies, program codes
+        and facility location.
+      </p>
+      <p class="small mb-0">
+        {{ source_counts.get('api', 0) }} API retrieval(s) &middot;
+        <a href="https://campd.epa.gov/" target="_blank" rel="noopener">campd.epa.gov</a>
+      </p>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="panel h-100">
+      <div class="fw-semibold mb-1">User-uploaded files</div>
+      <p class="small text-body-secondary mb-2">
+        CSV or Excel files in the CAMPD annual emissions layout, e.g. from CAMPD
+        Custom Data Download. Each file is kept as received, validated row by
+        row, and imported only after approval.
+      </p>
+      <p class="small mb-0">{{ source_counts.get('upload', 0) }} upload(s)</p>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="panel h-100">
+      <div class="fw-semibold mb-1">EPA TRACI characterization factors <span class="planned-badge">Phase 2</span></div>
+      <p class="small text-body-secondary mb-0">
+        Factors that convert emitted mass into environmental-impact indicators
+        (e.g. global warming, acidification, smog formation).
+      </p>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="panel h-100">
+      <div class="fw-semibold mb-1">Planned additional sources</div>
+      <p class="small text-body-secondary mb-0">
+        EPA eGRID (plant capacity and electricity benchmarks), EPA NEI (PM and
+        additional pollutants), and EPA WebFIRE / AP-42 (emission factors).
+      </p>
+    </div>
+  </div>
+</div>
+
+<h2 class="h6 text-body-secondary mb-3">Recent imports</h2>
 {% if not datasets %}
 <p class="text-body-secondary">No datasets have been imported yet.</p>
 {% else %}
-<div class="table-responsive">
-  <table class="table table-sm table-striped bg-white">
+<div class="table-wrap">
+  <table class="table table-sm table-data">
     <thead>
       <tr>
         <th scope="col">Dataset</th>
         <th scope="col">Source</th>
         <th scope="col">Year</th>
         <th scope="col">Imported</th>
-        <th scope="col" class="text-end">Records accepted</th> 
-         <th scope="col"></th>
-
+        <th scope="col" class="num">Records</th>
+        <th scope="col"></th>
       </tr>
     </thead>
     <tbody>
       {% for dataset in datasets %}
       <tr>
-        <td>{{ dataset.dataset_name }}</td>
+        <td><a href="{{ url_for('main.dataset_detail', dataset_id=dataset.id) }}">{{ dataset.dataset_name }}</a></td>
         <td>{{ dataset.data_source }}</td>
         <td>{{ dataset.reporting_year }}</td>
-        <td>{{ dataset.retrieval_date.strftime("%Y-%m-%d %H:%M") }}</td>
-        <td class="text-end">{{ "{:,}".format(dataset.accepted_records) }}</td>
-        <td class="text-end"> <form action="{{ url_for('main.delete_dataset', dataset_id=dataset.id) }}" method="post" onsubmit="return confirm('Delete {{ dataset.dataset_name | e }} and its {{ dataset.accepted_records }} record(s)? This cannot be undone.');" > <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button> </form> </td>
+        <td>{{ dataset.retrieval_date | when }}</td>
+        <td class="num">{{ dataset.accepted_records | num }}</td>
+        <td class="text-end">
+          <form action="{{ url_for('main.delete_dataset', dataset_id=dataset.id) }}" method="post" class="d-inline"
+                onsubmit="return confirm({{ ('Delete ' ~ dataset.dataset_name ~ ' and its ' ~ dataset.accepted_records ~ ' record(s)? This cannot be undone.') | tojson | forceescape }});">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Delete</button>
+          </form>
+        </td>
       </tr>
       {% endfor %}
     </tbody>
   </table>
 </div>
-<p class="small text-body-secondary">Showing the 10 most recent imports.</p>
+<p class="small text-body-secondary mt-2">
+  Showing the {{ datasets | length }} most recent of {{ dataset_total }} imports.
+  <a href="{{ url_for('download.downloads_page') }}">All datasets</a>
+</p>
 {% endif %}
 {% endblock %}

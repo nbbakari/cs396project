@@ -1,0 +1,207 @@
+{% extends "base.html" %}
+{% from "_macros.html" import severity_badge %}
+
+{% block title %}Review import &middot; epaData{% endblock %}
+{% block breadcrumb %}Review import{% endblock %}
+{% block container_width %}1200px{% endblock %}
+
+{% block content %}
+{% set stats = result.stats %}
+<h1 class="h4 mb-1">Review import</h1>
+<p class="page-intro mb-4">
+  {% if staged.source_type == 'api' %}CAMPD API retrieval{% else %}Uploaded file{% endif %}
+  <code>{{ staged.original_filename }}</code> &mdash; <strong>nothing has been saved to the
+  emissions tables yet.</strong> Check the report, then approve or discard.
+</p>
+
+{% if earlier %}
+<div class="alert alert-warning">
+  A file with identical contents was already imported
+  {% if earlier.dataset_id %}as <a href="{{ url_for('main.dataset_detail', dataset_id=earlier.dataset_id) }}">dataset #{{ earlier.dataset_id }}</a>{% endif %}.
+  Its rows will be reported as already stored.
+</div>
+{% endif %}
+
+{% if result.missing_required %}
+<div class="alert alert-danger">
+  <strong>This file cannot be imported:</strong> it has no column for
+  {{ result.missing_required | map('replace', '_', ' ') | join(', ') }}.
+  Columns found: {{ result.original.columns.tolist() | map('string') | join(', ') }}.
+</div>
+{% elif not result.can_import %}
+<div class="alert alert-warning">
+  <strong>No rows can be imported.</strong> Every row was rejected; the reasons are listed below.
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+  <div class="col-md-4">
+    <div class="panel h-100">
+      <div class="panel-title">Source</div>
+      <dl class="facts">
+        {% if staged.source_type == 'api' %}
+        <dt>Endpoint</dt><dd class="text-break"><code>{{ staged.source_url }}</code></dd>
+        <dt>Query</dt>
+        <dd>{% for key, value in query_params.items() %}<code>{{ key }}={{ value }}</code><br>{% endfor %}</dd>
+        {% endif %}
+        <dt>File</dt><dd class="text-break">{{ staged.original_filename }}</dd>
+        <dt>Size</dt><dd>{{ (staged.file_size / 1024) | num(1) }} KB</dd>
+        <dt>Received</dt><dd>{{ staged.uploaded_at | when }}</dd>
+        <dt>SHA-256</dt><dd class="text-break small"><code>{{ staged.sha256[:16] }}&hellip;</code></dd>
+      </dl>
+    </div>
+  </div>
+  <div class="col-md-8">
+    <div class="row row-cols-2 row-cols-lg-4 g-3">
+      <div class="col"><div class="stat-panel"><div class="stat-label">Rows in file</div><div class="stat-value">{{ stats.raw_records | num }}</div></div></div>
+      <div class="col"><div class="stat-panel is-good"><div class="stat-label">Will be imported</div><div class="stat-value">{{ stats.accepted_records | num }}</div></div></div>
+      <div class="col"><div class="stat-panel{{ ' is-bad' if stats.rejected_records }}"><div class="stat-label">Rejected</div><div class="stat-value">{{ stats.rejected_records | num }}</div></div></div>
+      <div class="col"><div class="stat-panel{{ ' is-warn' if stats.warning_records }}"><div class="stat-label">With warnings</div><div class="stat-value">{{ stats.warning_records | num }}</div></div></div>
+    </div>
+    {% if stats.reporting_years %}
+    <p class="small text-body-secondary mt-2 mb-0">
+      Reporting year(s): {{ stats.reporting_years | join(', ') }}
+    </p>
+    {% endif %}
+
+    {% if result.can_import %}
+    <form action="{{ url_for('upload.confirm_import', file_id=staged.id) }}" method="post" class="panel mt-3">
+      <label for="dataset_name" class="form-label-sm">Dataset name</label>
+      <div class="d-flex gap-2 flex-wrap">
+        <input type="text" class="form-control flex-grow-1" style="min-width: 14rem" id="dataset_name"
+               name="dataset_name" maxlength="150" value="{{ staged.dataset_name or staged.original_filename }}">
+        <button type="submit" class="btn btn-success text-nowrap">
+          Approve and import {{ stats.accepted_records | num }} record(s)
+        </button>
+      </div>
+      <div class="form-text">The rejected and flagged rows are stored with the dataset as its data-quality report.</div>
+    </form>
+    {% endif %}
+    <form action="{{ url_for('upload.cancel_import', file_id=staged.id) }}" method="post" class="mt-2">
+      <button type="submit" class="btn btn-outline-secondary btn-sm">Discard this file</button>
+    </form>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-5">
+    <div class="panel h-100">
+      <div class="panel-title">Issues by type</div>
+      {% if result.issues %}
+      <table class="table table-sm table-data">
+        <tbody>
+          {% for severity, issue_type, count in result.issue_counts() %}
+          <tr>
+            <td>{{ severity_badge(severity) }}</td>
+            <td>{{ issue_type | replace('_', ' ') }}</td>
+            <td class="num">{{ count | num }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="small text-body-secondary mb-0">No issues found. Every row passed validation.</p>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-lg-7">
+    <details class="panel h-100"{{ ' open' if result.missing_required or result.stats.absent_columns }}>
+      <summary class="panel-title mb-2">Column mapping ({{ result.resolved | length }} of {{ result.column_report() | length }} fields found)</summary>
+      <table class="table table-sm table-data">
+        <thead><tr><th>Field</th><th>Requirement</th><th>Column in file</th><th>Status</th></tr></thead>
+        <tbody>
+          {% for col in result.column_report() %}
+          <tr class="{{ 'table-danger' if 'blocked' in col.status else ('table-warning' if 'recorded as 0' in col.status else '') }}">
+            <td>{{ col.label }}</td>
+            <td class="small">{{ col.requirement }}</td>
+            <td><code>{{ col.source_column or '' }}</code></td>
+            <td class="small">{{ col.status }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% if result.unrecognised %}
+      <p class="small text-body-secondary mt-2 mb-0">
+        Ignored (not in the schema): {{ result.unrecognised | join(', ') }}
+      </p>
+      {% endif %}
+    </details>
+  </div>
+</div>
+
+{% if result.issues %}
+<div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-2">
+  <h2 class="h6 text-body-secondary mb-0">
+    Data-quality report
+    {% if issue_total > issues | length %}(first {{ issues | length }} of {{ issue_total | num }} issues){% endif %}
+  </h2>
+  <div class="d-flex gap-1 align-items-center">
+    <span class="small text-body-secondary me-1">Full report:</span>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('upload.review_report', file_id=staged.id, format='csv') }}">CSV</a>
+    <a class="btn btn-sm btn-outline-secondary" href="{{ url_for('upload.review_report', file_id=staged.id, format='xlsx') }}">Excel</a>
+  </div>
+</div>
+<div class="table-wrap mb-4" style="max-height: 420px; overflow-y: auto">
+  <table class="table table-sm table-data">
+    <thead class="sticky-top">
+      <tr>
+        <th scope="col" class="num">Row</th>
+        <th scope="col">Severity</th>
+        <th scope="col">Issue</th>
+        <th scope="col">Facility</th>
+        <th scope="col">Unit</th>
+        <th scope="col">Year</th>
+        <th scope="col">Detail</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for issue in issues %}
+      <tr>
+        <td class="num">{{ issue.source_row }}</td>
+        <td>{{ severity_badge(issue.severity) }}</td>
+        <td class="text-nowrap">{{ issue.issue_type | replace('_', ' ') }}</td>
+        <td>{{ issue.facility_id or '' }}</td>
+        <td>{{ issue.epa_unit_id or '' }}</td>
+        <td>{{ issue.reporting_year or '' }}</td>
+        <td>{{ issue.message }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if preview %}
+<h2 class="h6 text-body-secondary mb-2">
+  Preview of records to import
+  {% if stats.accepted_records > preview | length %}(first {{ preview | length }} of {{ stats.accepted_records | num }}){% endif %}
+</h2>
+<div class="table-wrap mb-4">
+  <table class="table table-sm table-data table-striped">
+    <thead>
+      <tr>
+        {% for key, label in preview_columns %}
+        <th scope="col" class="{{ 'num' if key in ('source_row', 'operating_time', 'gross_load', 'heat_input', 'co2_mass', 'so2_mass', 'nox_mass') }}">{{ label }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in preview %}
+      <tr>
+        {% for key, _ in preview_columns %}
+          {% set value = row[key] %}
+          {% if key in ('operating_time', 'gross_load', 'heat_input', 'co2_mass', 'so2_mass', 'nox_mass') %}
+          <td class="num">{{ value | num(1) }}</td>
+          {% elif key == 'source_row' %}
+          <td class="num">{{ value }}</td>
+          {% else %}
+          <td>{{ '' if value is none else value }}</td>
+          {% endif %}
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

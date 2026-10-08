@@ -11,7 +11,9 @@ config = context.config
 
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
-fileConfig(config.config_file_name)
+# disable_existing_loggers=False keeps the app's own loggers working when
+# migrations run inside the app (see AUTO_MIGRATE in app/__init__.py).
+fileConfig(config.config_file_name, disable_existing_loggers=False)
 logger = logging.getLogger('alembic.env')
 
 
@@ -97,6 +99,15 @@ def run_migrations_online():
     connectable = get_engine()
 
     with connectable.connect() as connection:
+        # SQLite applies most ALTERs by copying the table and dropping the
+        # original. With foreign keys enforced (see app/__init__.py), that DROP
+        # would cascade-delete every child row, so enforcement is suspended for
+        # the migration and restored afterwards.
+        is_sqlite = connection.dialect.name == "sqlite"
+        if is_sqlite:
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()
+
         context.configure(
             connection=connection,
             target_metadata=get_metadata(),
@@ -105,6 +116,11 @@ def run_migrations_online():
 
         with context.begin_transaction():
             context.run_migrations()
+
+        if is_sqlite:
+            connection.commit()
+            connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+            connection.commit()
 
 
 if context.is_offline_mode():

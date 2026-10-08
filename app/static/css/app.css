@@ -20,7 +20,9 @@ body {
 /* --- Sidebar --- */
 .sidebar {
   width: var(--sidebar-w);
-  background: var(--ink-900);
+  /* !important: Bootstrap's .offcanvas-lg forces a transparent background
+     from the lg breakpoint up, which left the white nav text unreadable. */
+  background-color: var(--ink-900) !important;
   color: #cbd5e1;
 }
 @media (min-width: 992px) {
@@ -194,3 +196,149 @@ body {
   font-weight: 700;
   color: #0f172a;
 }
+/* --- Shared page pieces --- */
+.page-intro {
+  color: #475569;
+  max-width: 70ch;
+}
+.panel {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.6rem;
+  padding: 1.1rem 1.25rem;
+}
+.panel-title {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+}
+.stat-panel .stat-sub {
+  font-size: 0.75rem;
+  color: #64748b;
+  margin-top: 0.15rem;
+}
+.stat-panel.is-good .stat-value { color: #047857; }
+.stat-panel.is-bad .stat-value { color: #b91c1c; }
+.stat-panel.is-warn .stat-value { color: #b45309; }
+
+/* Data tables: compact, numbers aligned and never wrapped. */
+.table-data {
+  font-size: 0.84rem;
+  margin-bottom: 0;
+}
+.table-data th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #475569;
+  white-space: nowrap;
+  background: #f8fafc;
+}
+.table-data td.num,
+.table-data th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.table-data a.sort-link {
+  color: inherit;
+  text-decoration: none;
+}
+.table-data a.sort-link:hover { text-decoration: underline; }
+.table-data th.sorted { color: #0f766e; }
+.table-wrap {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.6rem;
+  overflow-x: auto;
+}
+
+/* Conceptual query shown above search results. */
+.query-text {
+  background: #0b1220;
+  color: #a7f3d0;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+/* Example-search chips. */
+.preset-group-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #64748b;
+  margin: 0.5rem 0 0.35rem;
+}
+.preset-chip {
+  display: inline-block;
+  font-size: 0.8rem;
+  padding: 0.25rem 0.65rem;
+  margin: 0 0.35rem 0.4rem 0;
+  border: 1px solid #99f6e4;
+  background: #f0fdfa;
+  color: #115e59;
+  border-radius: 1rem;
+  text-decoration: none;
+}
+.preset-chip:hover { background: #ccfbf1; color: #134e4a; }
+
+.form-label-sm {
+  font-size: 0.75rem;
+  color: #475569;
+  margin-bottom: 0.2rem;
+}
+
+/* Upload dropzone. */
+.dropzone {
+  border: 2px dashed #94a3b8;
+  border-radius: 0.75rem;
+  padding: 2rem 1rem;
+  text-align: center;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+.dropzone:focus,
+.dropzone.dragover {
+  outline: none;
+  border-color: var(--accent);
+  background: #f0fdfa;
+}
+.dropzone.has-file { border-style: solid; border-color: var(--accent); }
+.dropzone .dz-title { font-weight: 600; color: #0f172a; }
+.dropzone .dz-file { font-family: var(--bs-font-monospace); font-size: 0.85rem; color: #0f766e; }
+
+.badge-severity-rejected { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+.badge-severity-warning { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+
+.nav-card {
+  display: block;
+  height: 100%;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.6rem;
+  padding: 1rem 1.1rem;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.nav-card:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(15, 23, 42, 0.06); }
+.nav-card .nav-card-title { font-weight: 600; color: #0f172a; margin-bottom: 0.2rem; }
+.nav-card .nav-card-text { font-size: 0.85rem; color: #64748b; }
+
+.chart-box {
+  position: relative;
+  height: 320px;
+}
+dl.facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; margin: 0; font-size: 0.88rem; }
+dl.facts dt { color: #64748b; font-weight: 500; }
+dl.facts dd { margin: 0; }
+
+/* Long multi-value cells (control technologies) wrap in a readable width. */
+.table-data td.wide-text { min-width: 15rem; }

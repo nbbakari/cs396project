@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pagination, severity_badge, format_links %}
+
+{% block title %}{{ dataset.dataset_name }} &middot; epaData{% endblock %}
+{% block breadcrumb %}Dataset #{{ dataset.id }}{% endblock %}
+{% block container_width %}1200px{% endblock %}
+
+{% block content %}
+<p class="mb-2 small"><a href="{{ url_for('download.downloads_page') }}">&larr; All datasets</a></p>
+<h1 class="h4 mb-1">{{ dataset.dataset_name }}</h1>
+<p class="text-body-secondary mb-3">
+  Dataset #{{ dataset.id }} &middot; {{ dataset.data_source }} &middot; imported {{ dataset.retrieval_date | when }}
+</p>
+
+<div class="row row-cols-2 row-cols-md-4 g-3 mb-4">
+  <div class="col"><div class="stat-panel"><div class="stat-label">Rows in source</div><div class="stat-value">{{ dataset.raw_records | num }}</div></div></div>
+  <div class="col"><div class="stat-panel is-good"><div class="stat-label">Imported</div><div class="stat-value">{{ dataset.accepted_records | num }}</div></div></div>
+  <div class="col"><div class="stat-panel{{ ' is-bad' if provenance and provenance.rejected_records }}"><div class="stat-label">Rejected</div><div class="stat-value">{{ (provenance.rejected_records if provenance else 0) | num }}</div></div></div>
+  <div class="col"><div class="stat-panel{{ ' is-warn' if provenance and provenance.warning_records }}"><div class="stat-label">With warnings</div><div class="stat-value">{{ (provenance.warning_records if provenance else 0) | num }}</div></div></div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">
+    <div class="panel h-100">
+      <div class="panel-title">Provenance</div>
+      {% if provenance %}
+      <dl class="facts">
+        <dt>Source</dt><dd>{{ provenance.source_name }}</dd>
+        {% if provenance.source_url %}<dt>Endpoint</dt><dd class="text-break"><code>{{ provenance.source_url }}</code></dd>{% endif %}
+        {% if query_params %}
+        <dt>Query parameters</dt>
+        <dd>{% for key, value in query_params.items() %}<code>{{ key }}={{ value }}</code><br>{% endfor %}</dd>
+        {% endif %}
+        <dt>Retrieved / uploaded</dt><dd>{{ provenance.retrieved_at | when }}</dd>
+        <dt>Reporting years</dt><dd>{{ provenance.reporting_years }}</dd>
+        <dt>Original file</dt>
+        <dd class="text-break">
+          {{ dataset.original_filename or '—' }}
+          {% if original_available %}&middot; <a href="{{ url_for('download.original_file', dataset_id=dataset.id) }}">download as received</a>{% endif %}
+        </dd>
+        {% if provenance.file_sha256 %}<dt>SHA-256</dt><dd class="text-break small"><code>{{ provenance.file_sha256 }}</code></dd>{% endif %}
+        {% if stored %}<dt>Stored copy</dt><dd class="small"><code>{{ stored.stored_filename }}</code> ({{ (stored.file_size / 1024) | num(1) }} KB)</dd>{% endif %}
+      </dl>
+      {% else %}
+      <p class="small text-body-secondary mb-0">No provenance record.</p>
+      {% endif %}
+      {% if dataset.notes %}
+      <details class="mt-3"><summary class="small text-body-secondary">Import notes</summary><p class="small mt-2 mb-0">{{ dataset.notes }}</p></details>
+      {% endif %}
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="panel mb-3">
+      <div class="panel-title">Records by year</div>
+      <table class="table table-sm table-data">
+        <tbody>
+          {% for year, count in per_year %}
+          <tr><td>{{ year }}</td><td class="num">{{ count | num }}</td>
+              <td class="text-end"><a class="small" href="{{ url_for('main.explorer', dataset=dataset.id, year=year) }}">explore</a></td></tr>
+          {% else %}
+          <tr><td class="text-body-secondary">No records.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <div class="panel-title">Downloads</div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="small">Valid (imported) records</span>
+        <span class="d-flex gap-1">{{ format_links(url_for('download.records', dataset=dataset.id, sort='facility_name', order='asc')) }}</span>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="small">Invalid-record report (rejected rows)</span>
+        <span class="d-flex gap-1">{{ format_links(url_for('download.issues', dataset=dataset.id, severity='rejected')) }}</span>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <span class="small">Full data-quality report</span>
+        <span class="d-flex gap-1">{{ format_links(url_for('download.issues', dataset=dataset.id)) }}</span>
+      </div>
+      <div class="d-flex gap-2">
+        <a class="btn btn-sm btn-outline-primary" href="{{ url_for('main.explorer', dataset=dataset.id) }}">Explore these records</a>
+        <form action="{{ url_for('main.delete_dataset', dataset_id=dataset.id) }}" method="post"
+              onsubmit="return confirm({{ ('Delete ' ~ dataset.dataset_name ~ ' and its ' ~ dataset.accepted_records ~ ' record(s)? This cannot be undone.') | tojson | forceescape }});">
+          <button type="submit" class="btn btn-sm btn-outline-danger">Delete dataset</button>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 class="h6 text-body-secondary mb-2">Data-quality report</h2>
+{% if counts %}
+<div class="d-flex flex-wrap gap-2 mb-3">
+  {% for severity_name, issue_type, count in counts %}
+  <span class="badge badge-severity-{{ severity_name }} fw-normal">{{ issue_type | replace('_', ' ') }}: {{ count | num }}</span>
+  {% endfor %}
+</div>
+<ul class="nav nav-pills nav-sm mb-2 small">
+  {% for value, label in [(none, 'All'), ('rejected', 'Rejected'), ('warning', 'Warnings')] %}
+  <li class="nav-item">
+    <a class="nav-link py-1{{ ' active' if severity == value }}" href="{{ url_with(severity=value, page=none) }}">{{ label }}</a>
+  </li>
+  {% endfor %}
+</ul>
+<div class="table-wrap mb-2">
+  <table class="table table-sm table-data">
+    <thead>
+      <tr><th class="num">Row</th><th>Severity</th><th>Issue</th><th>Facility</th><th>Unit</th><th>Year</th><th>Detail</th><th>Original row</th></tr>
+    </thead>
+    <tbody>
+      {% for issue in issues %}
+      <tr>
+        <td class="num">{{ issue.source_row or '' }}</td>
+        <td>{{ severity_badge(issue.severity) }}</td>
+        <td class="text-nowrap">{{ issue.issue_type | replace('_', ' ') }}</td>
+        <td>{{ issue.facility_id or '' }}</td>
+        <td>{{ issue.epa_unit_id or '' }}</td>
+        <td>{{ issue.reporting_year or '' }}</td>
+        <td>{{ issue.message }}</td>
+        <td>
+          {% if issue.raw_values %}
+          <details><summary class="small">show</summary>
+            <dl class="facts small mt-1">
+              {% for key, value in (issue.raw_values | fromjson).items() %}<dt>{{ key }}</dt><dd>{{ value if value is not none else '' }}</dd>{% endfor %}
+            </dl>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="d-flex justify-content-between align-items-center">
+  <span class="small text-body-secondary">{{ issue_total | num }} issue(s)</span>
+  {{ pagination(page, issue_pages) }}
+</div>
+{% elif dataset.provenance and dataset.provenance.notes and 'before row-level' in dataset.provenance.notes %}
+<p class="text-body-secondary small">This dataset was imported before row-level quality tracking; its rejected rows were counted but not kept.</p>
+{% else %}
+<p class="text-body-secondary small">No issues: every row in the source was imported unchanged.</p>
+{% endif %}
+{% endblock %}

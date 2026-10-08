@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% from "_macros.html" import format_links %}
+
+{% block title %}Downloads &middot; epaData{% endblock %}
+{% block breadcrumb %}Export &amp; Downloads{% endblock %}
+{% block container_width %}1200px{% endblock %}
+
+{% macro format_select(id) %}
+<div class="btn-group btn-group-sm" role="group" aria-label="File format">
+  {% for key, (label, _) in formats.items() %}
+  <input type="radio" class="btn-check" name="format" id="{{ id }}-{{ key }}" value="{{ key }}"{{ ' checked' if loop.first }}>
+  <label class="btn btn-outline-secondary" for="{{ id }}-{{ key }}">{{ label }}</label>
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% block content %}
+<h1 class="h4 mb-1">Export and downloads</h1>
+<p class="page-intro mb-4">
+  Download complete datasets, search results, selected facilities or units, the
+  data-quality reports and provenance. CSV is the standard format (UTF-8, one
+  header row, units in the column names); Excel is offered for convenience.
+</p>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-6">
+    <form method="get" action="{{ url_for('download.records') }}" class="panel h-100">
+      <div class="panel-title">Search results</div>
+      <p class="small text-body-secondary">
+        Quick filters below, or build any search in the
+        <a href="{{ url_for('main.explorer') }}">Data Explorer</a> and use its <em>Download</em> button
+        &mdash; the file holds exactly the rows that search shows.
+      </p>
+      <div class="row g-2">
+        <div class="col-6">
+          <label class="form-label-sm" for="d-year">Reporting year</label>
+          <select class="form-select form-select-sm" id="d-year" name="year">
+            <option value="">All years</option>
+            {% for year in choices.years %}<option>{{ year }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-6">
+          <label class="form-label-sm" for="d-state">State</label>
+          <select class="form-select form-select-sm" id="d-state" name="state">
+            <option value="">All states</option>
+            {% for state in choices.states %}<option>{{ state }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-6">
+          <label class="form-label-sm" for="d-fuel">Primary fuel</label>
+          <select class="form-select form-select-sm" id="d-fuel" name="primary_fuel">
+            <option value="">Any fuel</option>
+            {% for fuel in choices.primary_fuels %}<option>{{ fuel }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-6">
+          <label class="form-label-sm" for="d-type">Unit type</label>
+          <select class="form-select form-select-sm" id="d-type" name="unit_type">
+            <option value="">Any unit type</option>
+            {% for value in choices.unit_types %}<option>{{ value }}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="col-6">
+          <label class="form-label-sm" for="d-level">One row per</label>
+          <select class="form-select form-select-sm" id="d-level" name="level">
+            <option value="unit">Unit-year</option>
+            <option value="facility">Facility-year (totals)</option>
+          </select>
+        </div>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mt-3">
+        {{ format_select('search') }}
+        <button type="submit" class="btn btn-sm btn-primary">Download</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="col-lg-6">
+    <form method="get" action="{{ url_for('download.records') }}" class="panel mb-3">
+      <div class="panel-title">Selected facilities</div>
+      <label class="form-label-sm" for="d-facilities">Facility IDs (all units, all years)</label>
+      <input type="text" class="form-control form-control-sm mb-2" id="d-facilities" name="facility_id"
+             placeholder="e.g. 6002, 2103" required>
+      <p class="small text-body-secondary">To pick individual units, tick them in the Data Explorer and use <em>Download selected</em>.</p>
+      <input type="hidden" name="sort" value="facility_name"><input type="hidden" name="order" value="asc">
+      <div class="d-flex justify-content-between align-items-center">
+        {{ format_select('selected') }}
+        <button type="submit" class="btn btn-sm btn-primary">Download</button>
+      </div>
+    </form>
+
+    <div class="panel">
+      <div class="panel-title">Whole database and reports</div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="small">Every annual record</span>
+        <span class="d-flex gap-1">{{ format_links(url_for('download.records', sort='reporting_year', order='asc')) }}</span>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="small">Invalid-record report (all rejected rows)</span>
+        <span class="d-flex gap-1">{{ format_links(url_for('download.issues', severity='rejected')) }}</span>
+      </div>
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <span class="small">Rows imported with warnings</span>
+        <span class="d-flex gap-1">{{ format_links(url_for('download.issues', severity='warning')) }}</span>
+      </div>
+      <div class="d-flex justify-content-between align-items-center">
+        <span class="small">Data provenance (every dataset)</span>
+        <span class="d-flex gap-1">{{ format_links(url_for('download.provenance')) }}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<h2 class="h6 text-body-secondary mb-2">Complete datasets ({{ datasets | length }})</h2>
+{% if not datasets %}
+<p class="text-body-secondary">No datasets have been imported yet.</p>
+{% else %}
+<div class="table-wrap">
+  <table class="table table-sm table-data">
+    <thead>
+      <tr>
+        <th>#</th><th>Dataset</th><th>Source</th><th>Year</th><th>Imported</th>
+        <th class="num">Records</th><th class="num">Issues</th>
+        <th>Valid records</th><th>Quality report</th><th>Original</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for dataset, issue_count in datasets %}
+      <tr>
+        <td>{{ dataset.id }}</td>
+        <td><a href="{{ url_for('main.dataset_detail', dataset_id=dataset.id) }}">{{ dataset.dataset_name }}</a></td>
+        <td class="small">{{ dataset.data_source }}</td>
+        <td>{{ dataset.reporting_year }}</td>
+        <td class="small text-nowrap">{{ dataset.retrieval_date | when('%Y-%m-%d') }}</td>
+        <td class="num">{{ dataset.accepted_records | num }}</td>
+        <td class="num">{{ issue_count | num }}</td>
+        <td class="text-nowrap">
+          <a class="small" href="{{ url_for('download.records', dataset=dataset.id, format='csv') }}">CSV</a> &middot;
+          <a class="small" href="{{ url_for('download.records', dataset=dataset.id, format='xlsx') }}">Excel</a>
+        </td>
+        <td class="text-nowrap">
+          {% if issue_count %}
+          <a class="small" href="{{ url_for('download.issues', dataset=dataset.id, severity='rejected') }}">rejected</a> &middot;
+          <a class="small" href="{{ url_for('download.issues', dataset=dataset.id) }}">all</a>
+          {% else %}<span class="small text-body-secondary">none</span>{% endif %}
+        </td>
+        <td>
+          {% if dataset.uploaded_file %}<a class="small" href="{{ url_for('download.original_file', dataset_id=dataset.id) }}">file</a>{% else %}<span class="small text-body-secondary">&mdash;</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

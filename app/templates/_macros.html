@@ -1,0 +1,40 @@
+{# Pagination that keeps every other query parameter. #}
+{% macro pagination(page, total_pages, param='page') %}
+{% if total_pages > 1 %}
+<nav aria-label="Pages">
+  <ul class="pagination pagination-sm mb-0">
+    <li class="page-item{{ ' disabled' if page <= 1 }}">
+      <a class="page-link" href="{{ url_with(**{param: page - 1}) }}" aria-label="Previous">&larr; Prev</a>
+    </li>
+    {% set window = [1, page - 2, page - 1, page, page + 1, page + 2, total_pages] | unique | select('ge', 1) | select('le', total_pages) | list | sort %}
+    {% set ns = namespace(last=0) %}
+    {% for n in window %}
+      {% if n - ns.last > 1 %}<li class="page-item disabled"><span class="page-link">&hellip;</span></li>{% endif %}
+      <li class="page-item{{ ' active' if n == page }}">
+        <a class="page-link" href="{{ url_with(**{param: n}) }}">{{ n }}</a>
+      </li>
+      {% set ns.last = n %}
+    {% endfor %}
+    <li class="page-item{{ ' disabled' if page >= total_pages }}">
+      <a class="page-link" href="{{ url_with(**{param: page + 1}) }}" aria-label="Next">Next &rarr;</a>
+    </li>
+  </ul>
+</nav>
+{% endif %}
+{% endmacro %}
+
+{% macro severity_badge(severity) %}
+<span class="badge badge-severity-{{ severity }}">{{ 'Rejected' if severity == 'rejected' else 'Warning' }}</span>
+{% endmacro %}
+
+{% macro sort_header(label, key, current_sort, current_order, num=false) %}
+<th scope="col" class="{{ 'num' if num }}{{ ' sorted' if key == current_sort }}"
+    {% if key == current_sort %}aria-sort="{{ 'ascending' if current_order == 'asc' else 'descending' }}"{% endif %}>
+  <a class="sort-link" href="{{ sort_url(key) }}">{{ label }}{% if key == current_sort %} {{ '&#9650;' | safe if current_order == 'asc' else '&#9660;' | safe }}{% endif %}</a>
+</th>
+{% endmacro %}
+
+{% macro format_links(endpoint_url) %}
+<a class="btn btn-sm btn-outline-secondary" href="{{ endpoint_url }}{{ '&' if '?' in endpoint_url else '?' }}format=csv">CSV</a>
+<a class="btn btn-sm btn-outline-secondary" href="{{ endpoint_url }}{{ '&' if '?' in endpoint_url else '?' }}format=xlsx">Excel</a>
+{% endmacro %}

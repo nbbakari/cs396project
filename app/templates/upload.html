@@ -1,66 +1,90 @@
 {% extends "base.html" %}
 
 {% block title %}Upload data &middot; epaData{% endblock %}
+{% block breadcrumb %}File Intake &amp; Validation{% endblock %}
 
 {% block content %}
-<h1 class="h3 mb-1">Upload emissions data</h1>
-<p class="text-body-secondary mb-4">
-  Import a CAMPD annual emissions extract as <code>.csv</code> or
-  <code>.xlsx</code>.
+<h1 class="h4 mb-1">Upload emissions data</h1>
+<p class="page-intro mb-4">
+  Import a CAMPD annual emissions extract as <code>.csv</code> or <code>.xlsx</code>
+  (up to {{ max_mb }} MB). The file is checked and kept as received; you will see a
+  validation report and a preview, and nothing is imported until you approve it.
+  The file and the records you approve stay on this computer; they are not sent to the
+  team&rsquo;s shared database.
 </p>
 
-<div class="card shadow-sm">
-  <div class="card-body">
-    <form
-      action="{{ url_for('upload.upload_file') }}"
-      method="post"
-      enctype="multipart/form-data"
-    >
-      <div class="mb-3">
-        <label for="data_file" class="form-label">Data file</label>
-        <input
-          type="file"
-          class="form-control"
-          id="data_file"
-          name="data_file"
-          accept=".csv,.xlsx"
-          required
-        />
-        <div class="form-text">
-          Must include Facility ID, Unit ID and Year columns.
-        </div>
+<div class="row g-4 mb-4">
+  <div class="col-lg-7">
+    <form action="{{ url_for('upload.upload_file') }}" method="post" enctype="multipart/form-data" class="panel">
+      <div id="dropzone" class="dropzone mb-3" tabindex="0" role="button"
+           aria-label="Choose a file or drag one here">
+        <div class="dz-title">Drag a file here, or click to choose</div>
+        <div class="small text-body-secondary mb-2">CSV or Excel (.xlsx), up to {{ max_mb }} MB</div>
+        <div class="dz-file" id="selected-file-name">No file selected</div>
+        <input type="file" class="visually-hidden" id="data_file" name="data_file" accept=".csv,.xlsx" required>
       </div>
 
-      <div class="mb-3">
-        <label for="dataset_name" class="form-label">
-          Dataset name <span class="text-body-secondary">(optional)</span>
-        </label>
-        <input
-          type="text"
-          class="form-control"
-          id="dataset_name"
-          name="dataset_name"
-          maxlength="150"
-          placeholder="Defaults to the filename"
-        />
-      </div>
+      <label for="dataset_name" class="form-label-sm">Dataset name <span class="text-body-secondary">(optional)</span></label>
+      <input type="text" class="form-control mb-3" id="dataset_name" name="dataset_name" maxlength="150"
+             placeholder="Defaults to the filename">
 
-      <button type="submit" class="btn btn-primary">Upload</button>
+      <button type="submit" class="btn btn-primary" id="upload-submit">Upload and validate</button>
     </form>
+  </div>
+
+  <div class="col-lg-5">
+    <div class="panel h-100">
+      <div class="panel-title">Required format</div>
+      <p class="small mb-2"><strong>Required columns:</strong> {{ required_fields | join(', ') }}.</p>
+      <p class="small text-body-secondary mb-2">
+        <strong>Optional:</strong> {{ optional_fields | join(', ') }}. Unrecognised columns are ignored.
+      </p>
+      <p class="small text-body-secondary mb-0">
+        Headers match case-insensitively, ignoring punctuation and units, so
+        <code>Gross Load (MWh)</code>, <code>Gross Load</code> and <code>grossLoad</code>
+        are all accepted. CAMPD Custom Data Download files work as-is.
+      </p>
+    </div>
   </div>
 </div>
 
-<details class="mt-4">
-  <summary class="text-body-secondary">Recognised columns</summary>
-  <p class="small text-body-secondary mt-2 mb-0">
-    Headers are matched case-insensitively and ignore punctuation and units, so
-    <code>Gross Load (MWh)</code>, <code>Gross Load</code> and
-    <code>grossLoad</code> are all accepted. Required:
-    <code>Facility ID</code>, <code>Unit ID</code>, <code>Year</code>. Optional:
-    facility name, state, county, latitude, longitude, source category, unit
-    type, primary/secondary fuel, operating time, gross load, steam load, heat
-    input, CO2/SO2/NOx mass, SO2/NOx/PM controls and program code.
-    Unrecognised columns are ignored.
-  </p>
+<details class="mb-4">
+  <summary class="text-body-secondary">What validation checks</summary>
+  <div class="small text-body-secondary mt-2">
+    <p class="mb-1"><strong>Rejected</strong> (not imported, listed in the report):</p>
+    <ul>
+      <li>blank or unreadable facility ID, unit ID or year;</li>
+      <li>a year before 1995 (when CAMPD reporting began) or in the future;</li>
+      <li>a non-numeric or negative operating time, load, heat input or emission mass;</li>
+      <li>operating time above 8,784 hours (a leap year);</li>
+      <li>the same facility, unit and year twice in the file (the later row is kept);</li>
+      <li>a unit-year already in the database (the stored record is kept).</li>
+    </ul>
+    <p class="mb-1"><strong>Imported with a warning</strong>:</p>
+    <ul class="mb-0">
+      <li>a blank required metric, recorded as 0 (a unit that did not run);</li>
+      <li>an invalid state code, coordinate or date, left blank;</li>
+      <li>text longer than its database column, truncated.</li>
+    </ul>
+  </div>
 </details>
+
+{% if pending %}
+<h2 class="h6 text-body-secondary mb-2">Files awaiting review</h2>
+<ul class="list-group">
+  {% for staged in pending %}
+  <li class="list-group-item d-flex justify-content-between align-items-center">
+    <span>
+      {{ staged.original_filename }}
+      <span class="small text-body-secondary">&middot; {{ 'CAMPD API' if staged.source_type == 'api' else 'upload' }} &middot; {{ staged.uploaded_at | when }}</span>
+    </span>
+    <a class="btn btn-sm btn-outline-primary" href="{{ url_for('upload.review', file_id=staged.id) }}">Review</a>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/upload.js') }}"></script>
 {% endblock %}

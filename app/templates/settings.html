@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Settings &middot; epaData{% endblock %}
+{% block breadcrumb %}Settings{% endblock %}
+
+{% macro api_key_steps() %}
+<ol class="small mb-3 ps-3">
+  <li class="mb-1">
+    Request a free key on the EPA&rsquo;s
+    <a href="{{ api_key_signup_url }}" target="_blank" rel="noopener">CAM API portal</a>
+    (name and email; the key arrives by email within a minute).
+  </li>
+  <li>Paste it below. epaData checks it with the EPA and saves it on this computer.</li>
+</ol>
+{% endmacro %}
+
+{% block content %}
+<h1 class="h4 mb-1">Settings</h1>
+<p class="page-intro mb-4">Your CAMPD API key and where this computer&rsquo;s data comes from.</p>
+
+<div class="panel mb-4" id="api-key">
+  <div class="panel-title">CAMPD API key</div>
+  {% if api_key_masked %}
+  <p class="mb-3">
+    <span class="badge text-bg-success me-1">Connected</span>
+    Key ending <code>{{ api_key_masked }}</code> is saved on this computer.
+  </p>
+  <details class="mb-2">
+    <summary class="small text-body-secondary">Replace the key</summary>
+    <div class="mt-2">{{ api_key_steps() }}</div>
+    {% include "_api_key_form.html" %}
+  </details>
+  <form method="post" action="{{ url_for('settings.remove_api_key') }}"
+        onsubmit="return confirm('Remove the API key from this computer?');">
+    <button type="submit" class="btn btn-sm btn-outline-danger">Remove key</button>
+  </form>
+  {% else %}
+  <p class="mb-2"><span class="badge text-bg-secondary me-1">Not set</span> Retrieving data from the EPA needs your own free API key.</p>
+  {{ api_key_steps() }}
+  {% include "_api_key_form.html" %}
+  {% endif %}
+  <p class="small text-body-secondary mt-3 mb-0">
+    The key is stored as <code>CAMPD_API_KEY</code> in the <code>.env</code> file on this
+    computer, read only by the server, and sent only to the EPA. It is never shown in
+    full, put in a page or URL, or committed to Git.
+  </p>
+</div>
+
+<div class="panel mb-4">
+  <div class="panel-title">Data on this computer</div>
+  <dl class="facts mb-3">
+    <dt>Database</dt><dd><code>{{ local_database }}</code></dd>
+    <dt>Contents</dt><dd>{{ dataset_count }} dataset(s), {{ record_count | num }} annual record(s)</dd>
+    <dt>Original files</dt><dd><code>{{ upload_folder }}</code></dd>
+  </dl>
+  <p class="small text-body-secondary mb-0">
+    Everything you retrieve or upload is validated and saved here, on this
+    computer only. It is not sent to the team&rsquo;s shared database.
+  </p>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Team shared data</div>
+  {% if not shared_configured %}
+  <p class="small mb-0">
+    No shared database is configured. To start from the team&rsquo;s data, add the
+    connection string the team shares as <code>SHARED_DATABASE_URL</code> in
+    <code>.env</code> and restart the app.
+  </p>
+  {% elif local_has_data %}
+  <p class="small mb-0">
+    A shared database is configured. This computer already has data, so the
+    shared data can only be loaded into a fresh database: stop the app, delete
+    <code>{{ local_database }}</code>, start it again, and load from here.
+  </p>
+  {% else %}
+  <p class="small">
+    This computer&rsquo;s database is empty. Load the team&rsquo;s shared data
+    (2015&ndash;2025, about 47,000 records) to start from the same data as everyone
+    else. It takes about a minute.
+  </p>
+  {% include "_load_shared_form.html" %}
+  {% endif %}
+</div>
+{% endblock %}
