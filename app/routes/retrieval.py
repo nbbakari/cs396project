@@ -65,6 +65,7 @@ def _render_form(form: dict[str, str], status: int = 200):
                 choices["so2_controls"],
                 choices["nox_controls"],
                 choices["pm_controls"],
+                choices["hg_controls"],
             ),
             first_year=FIRST_REPORTING_YEAR,
             last_year=date.today().year,

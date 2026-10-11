@@ -43,7 +43,7 @@ Built for CS396 coursework.
 
 | Requirement | How epaData meets it |
 | --- | --- |
-| **Data retrieval** | Retrieval page calls the CAMPD API on the server with filters for reporting year, state, facility, fuel type, unit type and control technology. Facility attributes (county, coordinates, source category, operation and retirement dates) are fetched and merged. The API key lives only in the server environment. |
+| **Data retrieval** | Retrieval page calls the CAMPD API on the server with filters for reporting year, state, facility, fuel type, unit type and control technology. Facility attributes (county, coordinates, source category, owner/operator, operation and retirement dates) are fetched and merged. The API key lives only in the server environment. |
 | **Retrieval provenance** | Each retrieval stores the endpoint, query parameters, date, record counts and reporting years, plus the raw response as a CSV file. |
 | **File upload** | Drag-and-drop or file picker for `.csv` and `.xlsx`; extension and size (32 MB) checked; file read with pandas; columns mapped to the schema; preview and validation report; **approve or cancel**; original file kept. |
 | **No silent discards** | Every rejected or modified row is recorded with its source row number, field, reason and the original row, and is downloadable as a report. |
@@ -201,7 +201,7 @@ same parameters and return exactly the rows the search shows.
 | `state` | state code(s), comma-separated |
 | `year` | year(s), comma-separated; or `year_min` / `year_max` |
 | `primary_fuel`, `secondary_fuel`, `unit_type` | contains |
-| `so2_control`, `nox_control`, `pm_control`, `program` | contains |
+| `owner`, `so2_control`, `nox_control`, `pm_control`, `hg_control`, `program` | contains |
 | `unit`, `dataset` | internal unit key(s) / dataset ID(s) |
 
 **Ranges** (inclusive; use `_min` and/or `_max`): `op_time` (hours),
@@ -278,8 +278,8 @@ Dataset 1──* AnnualRecord *──1 Unit *──1 Facility
 | --- | --- | --- |
 | `datasets` | One import: name, source, reporting year, date, file name, raw/accepted counts, notes | |
 | `facilities` | EPA facility ID, name, state, county, latitude, longitude, source category | PK = EPA facility ID |
-| `units` | Internal key, facility, EPA unit ID, type, primary/secondary fuel, operating and retirement dates | unique (facility, EPA unit ID) |
-| `annual_records` | One unit-year: operating time, gross/steam load, heat input, CO₂/SO₂/NOₓ mass, SO₂/NOₓ/PM controls, program codes | unique (unit, year); CHECK non-negative, year range, hours ≤ 8,784 |
+| `units` | Internal key, facility, EPA unit ID, type, primary/secondary fuel, owner/operator, operating and retirement dates | unique (facility, EPA unit ID) |
+| `annual_records` | One unit-year: operating time, gross/steam load, heat input, CO₂/SO₂/NOₓ mass, SO₂/NOₓ/PM/Hg controls, program codes | unique (unit, year); CHECK non-negative, year range, hours ≤ 8,784 |
 | `uploaded_files` | The file as received (or saved API response): stored name, size, SHA-256, status `staged`/`imported`/`discarded` | |
 | `data_provenance` | Per dataset: source, endpoint, query parameters, file hash, years, raw/accepted/rejected/warning counts | unique dataset |
 | `data_quality_issues` | Per problem row: source row, severity, type, field, message, raw keys, original row (JSON) | index (dataset, severity) |

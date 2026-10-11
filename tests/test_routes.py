@@ -207,6 +207,7 @@ def test_retrieval_stages_api_data(client, monkeypatch):
             "primaryFuelInfo": "Coal", "secondaryFuelInfo": None,
             "unitType": "Tangentially-fired", "so2ControlInfo": "Wet Limestone",
             "noxControlInfo": None, "pmControlInfo": "Baghouse",
+            "hgControlInfo": "Halogenated PAC Sorbent Injection",
             "programCodeInfo": "ARP, CSNOX",
         }
     ]
@@ -214,6 +215,7 @@ def test_retrieval_stages_api_data(client, monkeypatch):
         {
             "facilityId": 1355, "unitId": "3", "year": 2023, "county": "Mercer County",
             "latitude": 37.7889, "longitude": -84.7139, "sourceCategory": "Electric Utility",
+            "ownerOperator": "Kentucky Utilities Company (Owner)|Kentucky Utilities Company (Operator)",
             "commercialOperationDate": "1971-07-01", "operatingStatus": "Operating",
         }
     ]
@@ -242,6 +244,24 @@ def test_retrieval_stages_api_data(client, monkeypatch):
     assert "unitFuelType" in provenance.query_params
     unit = db.session.scalars(select(Unit)).one()
     assert str(unit.operating_date) == "1971-07-01"
+    assert unit.owner_operator == (
+        "Kentucky Utilities Company (Owner)|Kentucky Utilities Company (Operator)"
+    )
+    record = db.session.scalars(select(AnnualRecord)).one()
+    assert record.hg_control == "Halogenated PAC Sorbent Injection"
+
+    # Shown on the detail pages, searchable, and in the CSV download.
+    facility_page = client.get("/facility/1355").get_data(as_text=True)
+    assert "Kentucky Utilities Company (Owner)<br>Kentucky Utilities Company (Operator)" in facility_page
+    unit_page = client.get(f"/unit/{unit.internal_unit_key}").get_data(as_text=True)
+    assert "Kentucky Utilities Company (Operator)" in unit_page
+    assert "Halogenated PAC Sorbent Injection" in unit_page
+    assert "E W Brown" in client.get("/explorer?hg_control=sorbent&owner=kentucky").get_data(as_text=True)
+    assert "No records match" in client.get("/explorer?owner=duke").get_data(as_text=True)
+    csv = client.get("/download/records?owner=kentucky").get_data(as_text=True)
+    header, row = csv.splitlines()[:2]
+    assert "owner_operator" in header.split(",") and "hg_controls" in header.split(",")
+    assert "Halogenated PAC Sorbent Injection" in row
 
 
 def test_retrieval_reports_api_errors(client, monkeypatch):

@@ -69,6 +69,7 @@ COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "unit_type": ("unittype", "unittypeinfo", "unittypedescription"),
     "primary_fuel": ("primaryfueltype", "primaryfuel", "primaryfuelinfo"),
     "secondary_fuel": ("secondaryfueltype", "secondaryfuel", "secondaryfuelinfo"),
+    "owner_operator": ("owneroperator", "owneroperatorinfo", "owner", "owners"),
     "operating_date": ("commercialoperationdate", "operatingdate", "operationdate"),
     "retirement_date": ("retirementdate", "retiredate"),
     # --- annual operating / emissions metrics -----------------------------
@@ -82,6 +83,7 @@ COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "so2_control": ("so2controls", "so2controlinfo", "so2control"),
     "nox_control": ("noxcontrols", "noxcontrolinfo", "noxcontrol"),
     "pm_control": ("pmcontrols", "pmcontrolinfo", "pmcontrol"),
+    "hg_control": ("hgcontrols", "hgcontrolinfo", "hgcontrol"),
     "program_code": ("programcode", "programcodeinfo", "programcodes", "programs"),
 }
 
@@ -99,6 +101,7 @@ FIELD_LABELS: dict[str, str] = {
     "unit_type": "Unit type",
     "primary_fuel": "Primary fuel",
     "secondary_fuel": "Secondary fuel",
+    "owner_operator": "Owner / operator",
     "operating_date": "Commercial operation date",
     "retirement_date": "Retirement date",
     "operating_time": "Operating time (hours)",
@@ -111,6 +114,7 @@ FIELD_LABELS: dict[str, str] = {
     "so2_control": "SO2 controls",
     "nox_control": "NOx controls",
     "pm_control": "PM controls",
+    "hg_control": "Hg controls",
     "program_code": "Program codes",
 }
 
@@ -172,6 +176,7 @@ TEXT_LIMITS = {
     "so2_control": 150,
     "nox_control": 150,
     "pm_control": 150,
+    "hg_control": 150,
     "program_code": 100,
 }
 

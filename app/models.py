@@ -109,8 +109,8 @@ class Unit(db.Model):
     """A single combustion / generating unit belonging to a facility.
 
     ``epa_unit_id`` is only unique within a facility, so an internal surrogate
-    key is used as the primary key. Type and fuel describe the unit as of the
-    most recent reporting year ingested.
+    key is used as the primary key. Type, fuel and owner describe the unit as
+    of the most recent reporting year ingested.
     """
 
     __tablename__ = "units"
@@ -130,6 +130,10 @@ class Unit(db.Model):
     unit_type: Mapped[str] = mapped_column(String(100), index=True)
     primary_fuel: Mapped[str] = mapped_column(String(100), index=True)
     secondary_fuel: Mapped[Optional[str]] = mapped_column(String(100))
+    # CAMPD reports owners and operators per unit, "|"-separated, e.g.
+    # "Alabama Power Company (Owner)|Alabama Power Company (Operator)".
+    # Unbounded: jointly owned units list a dozen or more co-owners.
+    owner_operator: Mapped[Optional[str]] = mapped_column(Text)
     operating_date: Mapped[Optional[date]] = mapped_column(Date)
     retirement_date: Mapped[Optional[date]] = mapped_column(Date)
 
@@ -192,6 +196,7 @@ class AnnualRecord(db.Model):
     so2_control: Mapped[Optional[str]] = mapped_column(String(150))
     nox_control: Mapped[Optional[str]] = mapped_column(String(150))
     pm_control: Mapped[Optional[str]] = mapped_column(String(150))
+    hg_control: Mapped[Optional[str]] = mapped_column(String(150))
     program_code: Mapped[Optional[str]] = mapped_column(String(100))
 
     unit: Mapped["Unit"] = relationship(back_populates="annual_records")

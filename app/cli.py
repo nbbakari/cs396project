@@ -129,7 +129,7 @@ def load_years_command(first, last, state):
 @click.argument("year", type=int)
 @click.option("--state", help="Limit to one state.")
 def attributes_command(year, state):
-    """Fill blank county, location, category and dates from CAMPD attributes."""
+    """Fill blank county, location, category, owner and dates from CAMPD attributes."""
     try:
         frame = fetch_attributes(build_query(year, state=state))
     except CampdError as exc:

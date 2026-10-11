@@ -18,8 +18,8 @@ accept ``none`` for "no value" and ``any`` for "has a value"):
     state           one or more two-letter codes, comma-separated
     year            one or more years, comma-separated
     year_min / year_max
-    primary_fuel, secondary_fuel, unit_type, so2_control, nox_control,
-    pm_control, program                                              (contains)
+    primary_fuel, secondary_fuel, unit_type, owner, so2_control,
+    nox_control, pm_control, hg_control, program                     (contains)
 
 Range filters, inclusive, each with ``_min`` and/or ``_max``:
 
@@ -67,9 +67,11 @@ TEXT_FILTERS = {
     "primary_fuel": (Unit.primary_fuel, "primary_fuel", "contains"),
     "secondary_fuel": (Unit.secondary_fuel, "secondary_fuel", "contains"),
     "unit_type": (Unit.unit_type, "unit_type", "contains"),
+    "owner": (Unit.owner_operator, "owner_operator", "contains"),
     "so2_control": (AnnualRecord.so2_control, "so2_control", "contains"),
     "nox_control": (AnnualRecord.nox_control, "nox_control", "contains"),
     "pm_control": (AnnualRecord.pm_control, "pm_control", "contains"),
+    "hg_control": (AnnualRecord.hg_control, "hg_control", "contains"),
     "program": (AnnualRecord.program_code, "program_code", "contains"),
 }
 
@@ -152,6 +154,7 @@ UNIT_COLUMNS = (
     Unit.unit_type,
     Unit.primary_fuel,
     Unit.secondary_fuel,
+    Unit.owner_operator,
     Unit.operating_date,
     Unit.retirement_date,
     AnnualRecord.id.label("record_id"),
@@ -166,6 +169,7 @@ UNIT_COLUMNS = (
     AnnualRecord.so2_control,
     AnnualRecord.nox_control,
     AnnualRecord.pm_control,
+    AnnualRecord.hg_control,
     AnnualRecord.program_code,
     AnnualRecord.dataset_id,
     Dataset.dataset_name,
@@ -193,6 +197,7 @@ UNIT_EXPORT_COLUMNS = [
     ("unit_type", "unit_type"),
     ("primary_fuel", "primary_fuel"),
     ("secondary_fuel", "secondary_fuel"),
+    ("owner_operator", "owner_operator"),
     ("operating_date", "commercial_operation_date"),
     ("retirement_date", "retirement_date"),
     ("reporting_year", "reporting_year"),
@@ -206,6 +211,7 @@ UNIT_EXPORT_COLUMNS = [
     ("so2_control", "so2_controls"),
     ("nox_control", "nox_controls"),
     ("pm_control", "pm_controls"),
+    ("hg_control", "hg_controls"),
     ("program_code", "program_codes"),
     ("dataset_id", "dataset_id"),
     ("dataset_name", "dataset_name"),
@@ -694,5 +700,6 @@ def filter_choices() -> dict[str, list[Any]]:
         "so2_controls": _distinct(AnnualRecord.so2_control, "|"),
         "nox_controls": _distinct(AnnualRecord.nox_control, "|"),
         "pm_controls": _distinct(AnnualRecord.pm_control, "|"),
+        "hg_controls": _distinct(AnnualRecord.hg_control, "|"),
         "programs": _distinct(AnnualRecord.program_code, ","),
     }

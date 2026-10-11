@@ -29,6 +29,8 @@
         <dt>State</dt><dd>{{ facility.state_code or '—' }}</dd>
         <dt>County</dt><dd>{{ facility.county or '—' }}</dd>
         <dt>Source category</dt><dd>{{ facility.source_category or '—' }}</dd>
+        <dt>Owner / operator</dt>
+        <dd>{% for owner in owners %}{{ owner }}{% if not loop.last %}<br>{% endif %}{% else %}&mdash;{% endfor %}</dd>
         <dt>Location</dt>
         <dd>
           {% if facility.latitude is not none and facility.longitude is not none %}

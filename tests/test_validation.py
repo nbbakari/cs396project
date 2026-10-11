@@ -122,6 +122,24 @@ def test_later_import_fills_blank_facility_attributes(sample_dataset):
     assert facility.county == "Fayette County"
 
 
+def test_owner_and_hg_controls_from_upload_headers(app):
+    """CAMPD download headers map to owner and Hg controls; the newest year's owner wins."""
+
+    def load(year, owner, hg_control):
+        csv = f"Facility ID,Unit ID,Year,Owner/Operator,Hg Controls\n100,1,{year},{owner},{hg_control}\n"
+        ingest(_validate(csv.encode()), dataset_name=str(year), data_source="CSV upload",
+               source_type="upload")
+
+    load(2022, "Old Power Co (Owner)", "Activated Carbon Injection")
+    load(2024, "New Power Co (Owner)|New Power Co (Operator)", "")
+    load(2023, "Middle Power Co (Owner)", "")
+
+    unit = db.session.scalars(select(Unit)).one()
+    assert unit.owner_operator == "New Power Co (Owner)|New Power Co (Operator)"
+    hg = dict(db.session.execute(select(AnnualRecord.reporting_year, AnnualRecord.hg_control)).all())
+    assert hg == {2022: "Activated Carbon Injection", 2023: None, 2024: None}
+
+
 def test_database_rejects_impossible_values(app, sample_dataset):
     from sqlalchemy.exc import IntegrityError
 

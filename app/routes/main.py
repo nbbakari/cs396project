@@ -171,8 +171,8 @@ def explorer():
     # shared link shows the user every filter that shaped the result.
     advanced_keys = {f"{p}_{s}" for p in RANGE_FILTERS for s in ("min", "max")}
     advanced_keys |= {"level", "limit", "group_by", "per_group", "year_min", "year_max",
-                      "secondary_fuel", "so2_control", "nox_control", "pm_control",
-                      "program", "county", "unit", "dataset"}
+                      "secondary_fuel", "owner", "so2_control", "nox_control",
+                      "pm_control", "hg_control", "program", "county", "unit", "dataset"}
     advanced_open = any(request.args.get(k) for k in advanced_keys)
 
     return render_template(
@@ -313,10 +313,19 @@ def facility_detail(facility_id: int):
             "heat_input": [row[3] for row in totals],
         },
     }
+    # Each unit lists its owners and operators "|"-separated; show every
+    # distinct entry once, in the order the units list them.
+    owners = list(dict.fromkeys(
+        part.strip()
+        for unit, *_ in units
+        for part in (unit.owner_operator or "").split("|")
+        if part.strip()
+    ))
     return render_template(
         "facility_detail.html",
         facility=facility,
         units=units,
+        owners=owners,
         totals=list(reversed(totals)),
         chart=chart,
         metric_labels=METRIC_LABELS,
