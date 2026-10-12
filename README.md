@@ -488,7 +488,6 @@ epaData/
 ├── data/                    # epadata.db and uploads/ (git-ignored)
 ├── migrations/              # Alembic migrations
 ├── sample_data/             # CAMPD extracts and a validation demo file for trying the app
-├── Project_Report/          # project report (PDF) and its source
 ├── tests/                   # pytest suite
 ├── sync_campd.py            # legacy wrapper for `flask campd fetch`
 ├── requirements.txt
