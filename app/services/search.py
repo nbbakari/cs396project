@@ -8,7 +8,8 @@ they always return the same rows for the same URL.
 Parameters
 ----------
 Basic filters (text filters match case-insensitively; "contains" filters also
-accept ``none`` for "no value" and ``any`` for "has a value"):
+accept ``none`` for "no value", ``any`` for "has a value", and ``not <text>``
+for "does not contain <text>", which includes rows with no value):
 
     facility_id     one or more EPA facility IDs, comma-separated   (equals)
     facility_name   (contains)          county          (contains)
@@ -331,6 +332,8 @@ class Search:
                 yield f"{column} IS NULL"
             elif lowered == "any":
                 yield f"{column} IS NOT NULL"
+            elif _excluded(value):
+                yield f"{column} NOT CONTAINS '{_excluded(value)}'"
             else:
                 yield f"{column} CONTAINS '{value}'"
         for prefix, (low, high) in self.ranges.items():
@@ -492,6 +495,13 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _excluded(value: str) -> Optional[str]:
+    """The text after "not " in a "contains" filter value, if it has one."""
+    if value[:4].lower() == "not " and value[4:].strip():
+        return value[4:].strip()
+    return None
+
+
 def _row_conditions(search: Search) -> list[Any]:
     """Conditions on individual unit-year rows (the WHERE clause)."""
     conditions: list[Any] = []
@@ -504,6 +514,9 @@ def _row_conditions(search: Search) -> list[Any]:
             conditions.append(or_(column.is_(None), column == ""))
         elif lowered == "any":
             conditions.append(and_(column.is_not(None), column != ""))
+        elif _excluded(value):
+            pattern = f"%{_escape_like(_excluded(value))}%"
+            conditions.append(or_(column.is_(None), ~column.ilike(pattern, escape="\\")))
         else:
             conditions.append(column.ilike(f"%{_escape_like(value)}%", escape="\\"))
 

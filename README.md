@@ -18,11 +18,13 @@ Built for CS396 coursework.
 - [Project status](#project-status)
 - [Features](#features)
 - [Quick start](#quick-start)
+- [Reproducing the results](#reproducing-the-results)
 - [Team setup](#team-setup)
 - [Environment variables](#environment-variables)
 - [Loading data](#loading-data)
 - [Pages](#pages)
 - [Search reference](#search-reference)
+  - [Description-based search](#description-based-search)
 - [Validation rules](#validation-rules)
 - [Data model](#data-model)
 - [Units, assumptions and limitations](#units-assumptions-and-limitations)
@@ -49,6 +51,7 @@ Built for CS396 coursework.
 | **No silent discards** | Every rejected or modified row is recorded with its source row number, field, reason and the original row, and is downloadable as a report. |
 | **Database** | SQLite via SQLAlchemy 2.0 and Alembic migrations, with foreign keys enforced, unique constraints on facility-unit and unit-year, CHECK constraints on impossible values, and indexes on searched columns. |
 | **Search** | 13 basic filters, 6 range filters, multi-criteria combinations, top-N/bottom-N, facility-level totals, group-and-rank (e.g. top emitter per state), facility/unit comparison and historical (multi-year) search. Results are paginated, sortable, linked to detail pages, downloadable, and fully described by the URL. |
+| **Description-based search** | Type a request such as *"Find coal units in Kentucky with high CO2 emissions"* in the explorer. A rule-based interpreter (no external service) turns it into ordinary search filters, shows how each phrase was read and which words it did not use, and fills in the filter form so the search can be adjusted. See [Description-based search](#description-based-search). |
 | **Display** | Dashboard, retrieval, upload/review, explorer, compare, facility, unit, dataset and download pages. |
 | **Download** | CSV (and Excel) for complete datasets, search results, selected facilities or units, valid records, invalid-record reports, warnings and provenance. |
 
@@ -76,6 +79,65 @@ the **Data Retrieval** and **Upload** pages ([Loading data](#loading-data)).
 
 Use `flask run --port 5001` if port 5000 is taken (on macOS it is often used by
 AirPlay Receiver).
+
+## Reproducing the results
+
+These steps need no CAMPD API key and no access to the team's shared
+database: the data comes from the files in [`sample_data/`](sample_data/).
+They were checked on Ubuntu 24.04 with Python 3.12 on a fresh virtual
+environment and an empty database.
+
+**System requirements:** Linux, macOS or Windows; Python 3.10 or newer; about
+300 MB of disk for the virtual environment; internet access only for
+`pip install` (and for the optional live retrieval in step 6).
+
+1. **Get the code.** Unzip the submission (or `git clone
+   https://github.com/nbbakari/cs396project.git`) and open a terminal in the
+   project folder, the one containing `run.py`.
+2. **Set up the environment.**
+
+   ```bash
+   python3 -m venv .venv
+   source .venv/bin/activate        # Windows: .venv\Scripts\Activate.ps1
+   pip install -r requirements.txt
+   cp .env.example .env             # Windows: Copy-Item .env.example .env
+   ```
+
+   `.env` needs no changes for these steps. Its `SHARED_DATABASE_URL` line is
+   a placeholder and is only used by the optional team features.
+3. **Run the automated tests.** `python -m pytest`. Expected: `94 passed`.
+4. **Start the app.** `flask run`, then open <http://127.0.0.1:5000/>. The
+   database `data/epadata.db` is created on the first page load and starts
+   empty.
+5. **Load the sample data.** Open **File Intake & Validation**, drop in each
+   file below, check the review page, and press **Approve import**:
+
+   | File | Expected on the review page and after approval |
+   | --- | --- |
+   | `sample_data/campd_annual_emissions_2024.csv` | 4,024 rows, 4,024 imported, 0 rejected, 773 imported with a warning (units that did not run, whose blank metrics are recorded as 0) |
+   | `sample_data/campd_annual_emissions_KY_2015-2020.csv` | 408 rows for 2015, 2018, 2019 and 2020, all imported, 61 with a warning |
+   | `sample_data/sample_with_errors.csv` | 10 rows, 3 imported (2 with a warning), 7 rejected: one each of `missing_key`, `negative_value` and `duplicate_in_file`, two `invalid_value` and two `out_of_range` |
+
+   The dashboard then shows 4,435 records for 1,333 facilities and 4,054
+   units. Each dataset page shows its provenance and its data-quality report,
+   and **Export & Downloads** offers the valid records, the invalid-record
+   report and the provenance as CSV.
+6. **Try the searches.** In **Data Explorer**:
+
+   | Try | Expected |
+   | --- | --- |
+   | Type *Find coal units in Kentucky with high CO2 emissions* in the description box | Read as primary fuel "coal", state KY and CO₂ ≥ 2,620,000 short tons (the top quarter); 49 unit-years, led by Trimble County unit 2 in 2015 (5,327,182 tons) |
+   | Example search *Top 10 facilities by CO₂ (2024)* | 10 facility totals for 2024, highest CO₂ first |
+   | Example search *Top CO₂ facility in each state (2024)* | one facility per state |
+   | Click a facility, then a unit | Location, owner, controls, the yearly history table and chart |
+
+7. **Optional: live retrieval.** Open **Data Retrieval**, follow the link to
+   request a free CAMPD API key (it arrives by email), paste it into the box,
+   and retrieve a year that is not loaded yet (for example 2023). A national
+   year takes 5 to 60 seconds and goes to the same review page.
+
+To start again from an empty database, stop the app and delete
+`data/epadata.db`.
 
 ## Team setup
 
@@ -176,7 +238,7 @@ then created from what that schema stored.
 | Data retrieval | `/retrieve` | CAMPD filters, retrieval status, pending reviews, retrieval history with query parameters and counts |
 | Upload | `/upload` | Drag-and-drop upload, supported formats, required columns, validation rules |
 | Review | `/review/<id>` | Validation report, column mapping, issues, preview, approve/discard |
-| Data explorer | `/explorer` | Search form, example searches, query description, sortable paginated results, selection, chart |
+| Data explorer | `/explorer` | Plain-English search box, search form, example searches, query description, sortable paginated results, selection, chart |
 | Compare | `/compare` | Up to 8 units or facilities year by year on any metric, with chart and table |
 | Facility | `/facility/<id>` | Location, units, annual totals, chart |
 | Unit | `/unit/<key>` | Identification, fuel, operating dates, history chart, every annual record with controls, programs and source dataset |
@@ -191,7 +253,8 @@ The **Download CSV** button on the explorer and `/download/records` accept the
 same parameters and return exactly the rows the search shows.
 
 **Basic filters.** Text filters ignore case. "Contains" filters also accept
-`none` (no value) and `any` (has a value).
+`none` (no value), `any` (has a value) and `not <text>` (does not contain the
+text, including blanks; e.g. `nox_control=not selective catalytic`).
 
 | Parameter | Matches |
 | --- | --- |
@@ -238,6 +301,41 @@ WHERE state_code = 'KY'
   AND co2_mass >= 500,000
 ORDER BY co2_mass DESC
 ```
+
+### Description-based search
+
+The box at the top of the explorer accepts a plain-English request. The
+explorer reads it as search parameters, redirects to that search's URL (which
+keeps the description as `q`), and lists how each phrase was read, for example:
+
+| Phrase | Read as |
+| --- | --- |
+| `coal` | Primary fuel contains "coal" |
+| `Kentucky` | State is Kentucky (KY) |
+| `high CO2 emissions` | CO₂ ≥ 2,680,000 short tons: the top quarter of matching unit-years |
+
+The interpreter is rule-based (`app/services/describe.py`), so it runs offline,
+gives the same answer every time, and every condition it adds is visible and
+editable in the filter form. It recognises:
+
+| Kind of phrase | Examples | Becomes |
+| --- | --- | --- |
+| States | `Kentucky`, `West Virginia`, `KY`, `IN and OH` | `state`; lower-case codes that are words (`in`, `or`, `me`) are left alone |
+| Places and names | `Mercer County`, `named "Gaston"`, `facility 3`, `unit 1`, `owned by Duke Energy`, a leftover word that matches up to 25 facility names (`Barry`) | `county`, `facility_name`, `facility_id`, `unit_id`, `owner` |
+| Fuels and unit types | `coal`, `natural gas`, `oil as backup fuel`, `combined cycle`, `peakers`, `boilers` | `primary_fuel`, `secondary_fuel`, `unit_type` |
+| Controls and programs | `with SCR`, `without scrubbers`, `low NOx burners`, `baghouse`, `mercury controls`, `uncontrolled`, `RGGI`, `Acid Rain Program` | control filters (`any`, `none`, `not …`), `program` |
+| Years | `2023`, `between 2015 and 2020`, `since 2020`, `before 2018`, `last year`, `last 3 years` | `year`, `year_min`, `year_max` (relative years count back from the latest year on file) |
+| Quantities | `more than 5,000 hours`, `SO2 below 500 tons`, `CO2 over 1.5 million tons`, `between 100,000 and 1,000,000 MWh`, `heat input > 5,000,000 MMBtu` | range filters; the unit (tons, MWh, MMBtu, hours) or a named measure picks the column |
+| Rankings | `top 10`, `highest NOx`, `10 largest CO2 emitters`, `lowest SO2`, `in each state`, `per fuel type`, `by gross load` | `sort`, `order`, `limit`, `group_by`, `per_group`; "highest" without a number returns 10 rows |
+| Relative levels | `high CO2`, `low SO2 and NOx`, `high-emitting`, `large units` | a range at the top (or bottom) quarter of the rows the other conditions match, computed from the data |
+| Size and level | `largest`, `big` (gross load); `plants`, `facilities` | facility totals (`level=facility`) unless units are mentioned |
+
+Assumptions it states on the page when it makes them: "emissions" with no
+pollutant named means CO₂; "lowest …" rankings and "low …" levels only count
+units that operated, so idle units with zero emissions don't fill the list;
+results can be ranked by one measure at a time. Mercury emissions are not in
+the annual data, and words such as "cleanest" or "retired" have no matching
+filter; these produce a short explanation instead of a guess.
 
 ## Validation rules
 
@@ -343,6 +441,7 @@ All responses are JSON, including errors (`{"error": ..., "detail": ...}`).
 | `GET /api/emissions/records` | Explorer search as JSON; accepts every [search parameter](#search-reference); `400` lists invalid parameters |
 | `GET /api/emissions/top-facilities?year=&limit=` | Facilities ranked by total CO₂ for one year (latest by default) |
 | `GET /api/emissions/years` | Reporting years with data, newest first |
+| `GET /api/emissions/interpret?q=` | Reads a plain-English description as search parameters; returns the parameters, how each phrase was read, unused words, and `explorer_url` / `records_url` for the same search |
 
 See `CONNECT.md` for response shapes and front-end integration notes.
 
@@ -352,13 +451,13 @@ See `CONNECT.md` for response shapes and front-end integration notes.
 pytest
 ```
 
-The suite (59 tests) runs against an in-memory SQLite database and a temporary
+The suite (94 tests) runs against an in-memory SQLite database and a temporary
 upload folder, and mocks the CAMPD API, so it needs no network or `.env`. It
 covers every validation rule, ingestion and re-import, database constraints,
 the search builder (filters, ranges, top-N, facility totals, group-and-rank,
-history), the upload → review → approve/cancel flow, retrieval, the API-key
-settings, a push/pull round trip through a shared database, every page, and
-every download.
+history), description-based search, the upload → review → approve/cancel
+flow, retrieval, the API-key settings, a push/pull round trip through a shared
+database, every page, and every download.
 
 ## Project structure
 
@@ -381,12 +480,15 @@ epaData/
 │   │   ├── ingest.py        # staging, import, provenance, enrichment
 │   │   ├── campd.py         # CAMPD API client
 │   │   ├── search.py        # explorer query builder
+│   │   ├── describe.py      # description-based search (plain English -> filters)
 │   │   ├── shared.py        # push to / pull from the shared database
 │   │   └── exports.py       # CSV / Excel responses
 │   ├── templates/           # Jinja templates (Bootstrap 5)
 │   └── static/              # CSS, JavaScript (Chart.js charts)
 ├── data/                    # epadata.db and uploads/ (git-ignored)
 ├── migrations/              # Alembic migrations
+├── sample_data/             # CAMPD extracts and a validation demo file for trying the app
+├── Project_Report/          # project report (PDF) and its source
 ├── tests/                   # pytest suite
 ├── sync_campd.py            # legacy wrapper for `flask campd fetch`
 ├── requirements.txt

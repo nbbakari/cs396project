@@ -18,10 +18,62 @@
 {% set is_facility = search.is_facility_level %}
 <h1 class="h4 mb-1">Data explorer</h1>
 <p class="page-intro mb-3">
-  Search annual records by any combination of filters and ranges, rank the top or
-  bottom N, or rank within states, fuels or years. Every search is part of the
-  page address, so you can bookmark it, share it, or download exactly these rows.
+  Describe what you want in plain English, or search annual records by any
+  combination of filters and ranges, rank the top or bottom N, or rank within
+  states, fuels or years. Every search is part of the page address, so you can
+  bookmark it, share it, or download exactly these rows.
 </p>
+
+<form method="get" action="{{ url_for('main.explorer') }}" class="panel mb-3 describe-panel" role="search" id="describe-form">
+  <label for="q" class="panel-title d-block">Describe what you're looking for</label>
+  <div class="input-group">
+    <input type="search" class="form-control" id="q" name="q" maxlength="300"
+           value="{{ request.args.get('q', '') }}"
+           placeholder="e.g. Find coal units in Kentucky with high CO2 emissions">
+    <button type="submit" class="btn btn-primary">Search</button>
+  </div>
+
+  {% if interpretation %}
+  <div class="interpretation mt-3" aria-live="polite">
+    {% if interpretation.params %}
+    <div class="interpretation-title">Understood as</div>
+    <ul class="interpretation-list">
+      {% for reading in interpretation.readings %}
+      <li>
+        {% if reading.phrase %}<span class="interpretation-phrase">{{ reading.phrase }}</span><span class="interpretation-arrow" aria-hidden="true">&rarr;</span>{% endif %}
+        <span>{{ reading.meaning }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <div class="interpretation-title">No search conditions were found in that description, so every record is shown.</div>
+    {% endif %}
+    {% if interpretation.ignored %}
+    <div class="small text-body-secondary mt-1">
+      Not used:
+      {% for word in interpretation.ignored %}<span class="interpretation-ignored">{{ word }}</span>{% endfor %}
+    </div>
+    {% endif %}
+    {% for note in interpretation.notes %}
+    <div class="small text-body-secondary mt-1">{{ note }}</div>
+    {% endfor %}
+    {% if interpretation_edited %}
+    <div class="small fw-semibold mt-2 text-warning-emphasis">The filters below have been changed since this description was read; the results follow the filters.</div>
+    {% elif interpretation.params %}
+    <div class="small text-body-secondary mt-2">These conditions are filled into the filters below, so you can adjust them and search again.</div>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  {% if not interpretation or not interpretation.params %}
+  <div class="mt-2">
+    <span class="small text-body-secondary me-1">Try:</span>
+    {% for example in describe_examples %}
+    <a class="preset-chip" href="{{ url_for('main.explorer', q=example) }}">{{ example }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
+</form>
 
 <details class="panel mb-3"{{ ' open' if not request.args }}>
   <summary class="panel-title mb-0">Example searches</summary>
@@ -54,10 +106,10 @@
     <summary class="small fw-semibold text-body-secondary">More filters, ranges and ranking</summary>
     <div class="row g-2 mt-1">
       {{ text_input('secondary_fuel', 'Secondary fuel', 'contains…', 'secondary_fuels') }}
-      {{ text_input('so2_control', 'SO₂ control', 'contains, none, any', 'so2_controls') }}
-      {{ text_input('nox_control', 'NOx control', 'contains, none, any', 'nox_controls') }}
-      {{ text_input('pm_control', 'PM control', 'contains, none, any', 'pm_controls') }}
-      {{ text_input('hg_control', 'Hg control', 'contains, none, any', 'hg_controls') }}
+      {{ text_input('so2_control', 'SO₂ control', 'contains, none, any, not …', 'so2_controls') }}
+      {{ text_input('nox_control', 'NOx control', 'contains, none, any, not …', 'nox_controls') }}
+      {{ text_input('pm_control', 'PM control', 'contains, none, any, not …', 'pm_controls') }}
+      {{ text_input('hg_control', 'Hg control', 'contains, none, any, not …', 'hg_controls') }}
       {{ text_input('owner', 'Owner / operator', 'contains…') }}
       {{ text_input('program', 'Program code', 'e.g. ARP', 'programs') }}
       <div class="col-6 col-md-3 col-xl-2">
@@ -131,7 +183,7 @@
     </div>
     <p class="small text-body-secondary mt-2 mb-0">
       Text filters match any part of the value, ignoring case; for controls,
-      <code>none</code> finds units without that control and <code>any</code> finds units with one.
+      <code>none</code> finds units without that control, <code>any</code> finds units with one, and <code>not baghouse</code> excludes one.
       Ranges include their end points. At facility-year level, ranges apply to the
       facility totals (operating time still filters individual units).
     </p>

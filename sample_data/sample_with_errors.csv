@@ -1,0 +1,11 @@
+Facility Name,Facility ID,Unit ID,Year,State,County,Gross Load (MWh),Heat Input (mmBtu),CO2 Mass (short tons),SO2 Mass (short tons),NOx Mass (short tons),Operating Time,Primary Fuel Type,Unit Type,SO2 Controls
+Sample Plant A,900001,1,2023,KY,Mercer County,1000,5000,400000,10,5,6000,Coal,Tangentially-fired,Wet Limestone
+Sample Plant A,900001,2,2023,KY,Mercer County,,,,,,,Pipeline Natural Gas,Combined cycle,
+Sample Plant B,,1,2023,KY,,100,100,100,1,1,100,Coal,Stoker,
+Sample Plant B,900002,1,abc,KY,,100,100,100,1,1,100,Coal,Stoker,
+Sample Plant B,900002,1,2023,KY,,-5,100,100,1,1,100,Coal,Stoker,
+Sample Plant C,900003,1,2023,WV,,100,100,100,1,1,9000,Coal,Stoker,
+Sample Plant A,900001,1,2023,KY,Mercer County,2000,9000,600000,20,8,7000,Coal,Tangentially-fired,Wet Limestone
+Sample Plant D,900004,1,1990,KY,,100,100,100,1,1,100,Coal,Stoker,
+Sample Plant E,900005,1,2023,Kentucky,,100,100,200,1,1,100,Natural Gas,Combustion turbine,
+Sample Plant F,900006,1,2023,KY,,lots,100,100,1,1,100,Coal,Stoker,

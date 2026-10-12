@@ -59,6 +59,14 @@ def test_control_none_matches_blank(data):
     assert [(r.facility_id, r.epa_unit_id) for r in page.rows] == [(1, "2")]
 
 
+def test_control_not_excludes_a_value(data):
+    search, page = _search(so2_control="not limestone")
+    assert sorted((r.facility_id, r.epa_unit_id) for r in page.rows) == [
+        (1, "2"), (2, "CT1"), (3, "1"), (4, "1"),
+    ]
+    assert "so2_control NOT CONTAINS 'limestone'" in search.describe()
+
+
 def test_top_and_bottom_n(data):
     _, top = _search(year="2023", sort="co2_mass", order="desc", limit="2")
     assert [r.co2_mass for r in top.rows] == [800000, 700000]

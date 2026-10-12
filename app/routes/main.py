@@ -17,6 +17,7 @@ from app.models import (
     Facility,
     Unit,
 )
+from app.services.describe import interpret
 from app.services.ingest import query_params_of, remove_stored_file, upload_path
 from app.services.search import (
     GROUPS,
@@ -159,13 +160,45 @@ def _presets(year: Any) -> list[tuple[str, str, dict[str, Any]]]:
     ]
 
 
+def _describe_examples(year: Any) -> list[str]:
+    """Plain-English searches offered under the description box."""
+    y = str(year or 2024)
+    return [
+        "Find coal units in Kentucky with high CO2 emissions",
+        f"Top 10 facilities by CO2 in {y}",
+        f"Highest NOx emitter in each state in {y}",
+        "Coal units in Ohio without SCR",
+        "Gas units with SO2 below 500 tons since 2020",
+        "Plants owned by Duke Energy in North Carolina",
+    ]
+
+
 @main_bp.route("/explorer")
 def explorer():
-    """Search, filter, rank and page through annual records."""
-    search = parse_search(request.args)
-    results = run_search(search)
+    """Search, filter, rank and page through annual records.
+
+    ``q`` holds a plain-English description. On its own it is interpreted and
+    redirected to the equivalent filter URL, which keeps ``q`` so the page can
+    show how the description was read.
+    """
     choices = filter_choices()
     latest_year = choices["years"][0] if choices["years"] else None
+
+    interpretation = None
+    interpretation_edited = False
+    description = (request.args.get("q") or "").strip()
+    if description:
+        interpretation = interpret(description, latest_year=latest_year)
+        if interpretation.params and set(request.args) == {"q"}:
+            return redirect(url_for("main.explorer", q=interpretation.text, **interpretation.params))
+        # Sorting or paging keeps q; flag a search changed in other ways.
+        ignore = {"q", "page", "per_page", "sort", "order"}
+        applied = {k: v for k, v in request.args.items() if k not in ignore}
+        expected = {k: v for k, v in interpretation.params.items() if k not in ignore}
+        interpretation_edited = applied != expected
+
+    search = parse_search(request.args)
+    results = run_search(search)
 
     # Open the advanced panel whenever the URL uses something in it, so a
     # shared link shows the user every filter that shaped the result.
@@ -187,6 +220,9 @@ def explorer():
         range_filters=RANGE_FILTERS,
         advanced_open=advanced_open,
         latest_year=latest_year,
+        interpretation=interpretation,
+        interpretation_edited=interpretation_edited,
+        describe_examples=_describe_examples(latest_year),
     )
 
 

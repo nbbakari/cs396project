@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, jsonify, request, url_for
 from sqlalchemy import func, select
 from sqlalchemy.exc import SQLAlchemyError
 
 from app import db
 from app.models import AnnualRecord, Facility, Unit
+from app.services.describe import MAX_LENGTH, interpret
 from app.services.search import parse_search, run_search
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
@@ -162,6 +163,30 @@ def emissions_records():
             ],
         }
     )
+
+
+@api_bp.route("/emissions/interpret", methods=["GET"])
+def interpret_description():
+    """Read a plain-English description as data-explorer search parameters.
+
+    Query parameters:
+        q: the description, e.g. "coal units in Kentucky with high CO2".
+
+    Returns the parameters, how each phrase was read, the words that were not
+    used, and links to the same search in the explorer and in this API.
+    """
+    description = (request.args.get("q") or "").strip()
+    if not description:
+        return jsonify({"error": "Missing description", "detail": "Pass it as ?q=..."}), 400
+    if len(description) > MAX_LENGTH:
+        return jsonify({"error": "Description too long",
+                        "detail": f"Keep it under {MAX_LENGTH} characters."}), 400
+    latest = _latest_reporting_year()
+    interpretation = interpret(description, latest_year=latest)
+    body = interpretation.as_dict()
+    body["explorer_url"] = url_for("main.explorer", q=interpretation.text, **interpretation.params)
+    body["records_url"] = url_for("api.emissions_records", **interpretation.params)
+    return jsonify(body)
 
 
 def _json_value(value):
