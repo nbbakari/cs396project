@@ -39,10 +39,12 @@
         <dt>Unit type</dt><dd>{{ unit.unit_type }}</dd>
         <dt>Primary fuel</dt><dd>{{ unit.primary_fuel }}</dd>
         <dt>Secondary fuel</dt><dd>{{ unit.secondary_fuel or '—' }}</dd>
+        <dt>Owner / operator</dt>
+        <dd>{% for owner in (unit.owner_operator or '').split('|') if owner.strip() %}{{ owner.strip() }}{% if not loop.last %}<br>{% endif %}{% else %}&mdash;{% endfor %}</dd>
         <dt>Commercial operation</dt><dd>{{ unit.operating_date or '—' }}</dd>
         <dt>Retired</dt><dd>{{ unit.retirement_date or '—' }}</dd>
       </dl>
-      <p class="small text-body-secondary mt-2 mb-0">Type and fuel are as of the latest reporting year on file.</p>
+      <p class="small text-body-secondary mt-2 mb-0">Type, fuel and owner are as of the latest reporting year on file.</p>
     </div>
   </div>
   <div class="col-lg-8">
@@ -80,6 +82,7 @@
         <th>SO₂ controls</th>
         <th>NOx controls</th>
         <th>PM controls</th>
+        <th>Hg controls</th>
         <th>Programs</th>
         <th>Source</th>
       </tr>
@@ -98,6 +101,7 @@
         <td class="small wide-text">{{ (record.so2_control or '') | replace('|', '; ') }}</td>
         <td class="small wide-text">{{ (record.nox_control or '') | replace('|', '; ') }}</td>
         <td class="small wide-text">{{ (record.pm_control or '') | replace('|', '; ') }}</td>
+        <td class="small wide-text">{{ (record.hg_control or '') | replace('|', '; ') }}</td>
         <td class="small">{{ record.program_code or '' }}</td>
         <td class="small text-nowrap"><a href="{{ url_for('main.dataset_detail', dataset_id=dataset.id) }}">#{{ dataset.id }}</a> {{ dataset.data_source }}</td>
       </tr>

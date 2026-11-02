@@ -6,12 +6,14 @@ import time
 from decimal import Decimal
 from typing import Optional
 
-from flask import Blueprint, jsonify, request, current_app
-from google import genai
-from google.genai import types
-from sqlalchemy import select, func, distinct
+from flask import Blueprint, current_app, jsonify, request, url_for
+from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.models import AnnualRecord, db
+from app import db
+from app.models import AnnualRecord, Facility, Unit
+from app.services.describe import MAX_LENGTH, interpret
+from app.services.search import parse_search, run_search
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 ai_bp = Blueprint("ai", __name__, url_prefix="/api/ai")
@@ -309,49 +311,64 @@ def ai_query():
         return jsonify({"error": "No prompt provided."}), 400
 
     try:
-        client = get_gemini_client()
-        chat = client.chats.create(
-            model=AI_MODEL,
-            history=_build_history(data.get("history")),
-        )
+        results = run_search(search)
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        current_app.logger.exception("emissions-records query failed")
+        return jsonify({"error": "Database query failed", "detail": str(exc)}), 500
 
-        response = None
-        last_error = None
-        for attempt in range(3):
-            try:
-                response = chat.send_message(
-                    user_message,
-                    config=types.GenerateContentConfig(
-                        tools=[query_epa_database],
-                        system_instruction=AI_SYSTEM_INSTRUCTION,
-                        temperature=0.2,
-                    ),
-                )
-                break
-            except Exception as e:
-                last_error = e
-                current_app.logger.error(f"AI attempt {attempt + 1} failed: {e}")
-                if "503" in str(e) or "UNAVAILABLE" in str(e):
-                    time.sleep(2 * (attempt + 1))  # wait 2s, 4s, 6s, then try again
-                    continue
-                break
+    columns = search.export_columns
+    return jsonify(
+        {
+            "page": results.page,
+            "per_page": results.per_page,
+            "total": results.total,
+            "total_pages": results.total_pages,
+            "level": search.level,
+            "sort": search.sort,
+            "order": search.order,
+            "records": [
+                {
+                    key: _json_value(row._mapping.get(key))
+                    for key, _ in [*columns, ("unit_key", "unit_key")]
+                    if key in row._mapping
+                }
+                for row in results.rows
+            ],
+        }
+    )
 
-        if response is None:
-            detail = str(last_error)
-            if "429" in detail or "RESOURCE_EXHAUSTED" in detail:
-                return jsonify({
-                    "error": "The AI has reached its free usage limit for now. "
-                             "Try again later, or set GEMINI_MODEL in .env to a different model."
-                }), 429
-            return jsonify({
-                "error": f"AI call failed: {type(last_error).__name__}: {last_error}"
-            }), 503
 
-        return jsonify({"response": response.text or "No response generated."})
+@api_bp.route("/emissions/interpret", methods=["GET"])
+def interpret_description():
+    """Read a plain-English description as data-explorer search parameters.
 
-    except Exception as e:
-        logger.exception("AI assistant endpoint encountered an unexpected error.")
-        return jsonify({"error": str(e)}), 500
+    Query parameters:
+        q: the description, e.g. "coal units in Kentucky with high CO2".
+
+    Returns the parameters, how each phrase was read, the words that were not
+    used, and links to the same search in the explorer and in this API.
+    """
+    description = (request.args.get("q") or "").strip()
+    if not description:
+        return jsonify({"error": "Missing description", "detail": "Pass it as ?q=..."}), 400
+    if len(description) > MAX_LENGTH:
+        return jsonify({"error": "Description too long",
+                        "detail": f"Keep it under {MAX_LENGTH} characters."}), 400
+    latest = _latest_reporting_year()
+    interpretation = interpret(description, latest_year=latest)
+    body = interpretation.as_dict()
+    body["explorer_url"] = url_for("main.explorer", q=interpretation.text, **interpretation.params)
+    body["records_url"] = url_for("api.emissions_records", **interpretation.params)
+    return jsonify(body)
+
+
+def _json_value(value):
+    if isinstance(value, float):
+        return round(value, 2)
+    if hasattr(value, "isoformat"):
+        return value.isoformat()
+    return value
 
 
 @api_bp.route("/emissions/years", methods=["GET"])

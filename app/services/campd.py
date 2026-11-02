@@ -5,8 +5,8 @@ Two streaming endpoints are used for one retrieval:
 * ``emissions/apportioned/annual`` -- one row per unit-year with operating
   data, emissions, fuels, controls and program codes;
 * ``facilities/attributes`` -- the same unit-years with county, latitude,
-  longitude, source category, commercial operation date and operating status,
-  which the emissions endpoint does not return.
+  longitude, source category, owner/operator, commercial operation date and
+  operating status, which the emissions endpoint does not return.
 
 The two are merged on (facilityId, unitId, year) into a single table in the
 emissions endpoint's camelCase format, which the validation pipeline already
@@ -41,6 +41,7 @@ ATTRIBUTE_COLUMNS = (
     "latitude",
     "longitude",
     "sourceCategory",
+    "ownerOperator",
     "commercialOperationDate",
     "retirementDate",
 )
@@ -294,8 +295,8 @@ def retrieve_annual(query: dict[str, str], *, include_attributes: bool = True) -
             attributes = fetch_attributes(query)
         except CampdError as error:
             retrieval.warnings.append(
-                f"Facility attributes could not be retrieved, so county, location "
-                f"and dates are left blank: {error}"
+                f"Facility attributes could not be retrieved, so county, location, "
+                f"owner and dates are left blank: {error}"
             )
         else:
             retrieval.attribute_rows = len(attributes)

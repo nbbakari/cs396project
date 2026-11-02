@@ -342,3 +342,41 @@ dl.facts dd { margin: 0; }
 
 /* Long multi-value cells (control technologies) wrap in a readable width. */
 .table-data td.wide-text { min-width: 15rem; }
+
+/* Description-based search ---------------------------------------------- */
+.describe-panel .input-group .form-control { font-size: 1rem; }
+.interpretation {
+  border-left: 3px solid #14b8a6;
+  padding: 0.5rem 0 0.25rem 0.85rem;
+}
+.interpretation-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+}
+.interpretation-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.875rem;
+}
+.interpretation-list li { padding: 0.15rem 0; }
+.interpretation-phrase {
+  display: inline-block;
+  font-family: var(--bs-font-monospace);
+  font-size: 0.8rem;
+  background: #f0fdfa;
+  border: 1px solid #99f6e4;
+  border-radius: 0.25rem;
+  padding: 0 0.4rem;
+}
+.interpretation-arrow {
+  color: #64748b;
+  margin: 0 0.45rem;
+}
+.interpretation-ignored {
+  display: inline-block;
+  text-decoration: line-through;
+  color: #94a3b8;
+  margin-right: 0.4rem;
+}

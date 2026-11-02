@@ -202,19 +202,20 @@ def _fill_facility(facility: Facility, row: Any) -> None:
 
 
 def _update_unit(unit: Unit, row: Any, *, is_latest_year: bool) -> None:
-    """Keep a unit's type and fuel current as of its latest reporting year.
+    """Keep a unit's type, fuel and owner current as of its latest reporting year.
 
-    Fuel and type can change over a unit's life (coal-to-gas conversions), and
-    the schema keeps one value per unit, so the most recent year wins. Older
-    years only fill values that are still unknown.
+    Fuel, type and owner can change over a unit's life (coal-to-gas
+    conversions, sales), and the schema keeps one value per unit, so the most
+    recent year wins. Older years only fill values that are still unknown.
     """
     for attr in ("unit_type", "primary_fuel"):
         value = as_text(getattr(row, attr), attr)
         if value and (is_latest_year or getattr(unit, attr) in (None, "", UNKNOWN)):
             setattr(unit, attr, value)
-    secondary = as_text(row.secondary_fuel, "secondary_fuel")
-    if secondary and (is_latest_year or unit.secondary_fuel is None):
-        unit.secondary_fuel = secondary
+    for attr in ("secondary_fuel", "owner_operator"):
+        value = as_text(getattr(row, attr), attr)
+        if value and (is_latest_year or getattr(unit, attr) is None):
+            setattr(unit, attr, value)
     for attr in ("operating_date", "retirement_date"):
         value = as_date(getattr(row, attr))
         if value is not None and getattr(unit, attr) is None:
@@ -307,6 +308,7 @@ def ingest(
                     unit_type=as_text(row.unit_type, "unit_type") or UNKNOWN,
                     primary_fuel=as_text(row.primary_fuel, "primary_fuel") or UNKNOWN,
                     secondary_fuel=as_text(row.secondary_fuel, "secondary_fuel"),
+                    owner_operator=as_text(row.owner_operator, "owner_operator"),
                     operating_date=as_date(row.operating_date),
                     retirement_date=as_date(row.retirement_date),
                 )
@@ -333,6 +335,7 @@ def ingest(
                     so2_control=as_text(row.so2_control, "so2_control"),
                     nox_control=as_text(row.nox_control, "nox_control"),
                     pm_control=as_text(row.pm_control, "pm_control"),
+                    hg_control=as_text(row.hg_control, "hg_control"),
                     program_code=as_text(row.program_code, "program_code"),
                 )
             )
@@ -406,8 +409,8 @@ def import_staged(staged: UploadedFile, *, dataset_name: Optional[str] = None) -
 def enrich_from_attributes(frame) -> tuple[int, int]:
     """Fill blank facility and unit attributes from a CAMPD attributes table.
 
-    Used for facilities imported from sources without location data (e.g. an
-    older CSV export). Known values are never overwritten. Returns the number
+    Used for facilities imported from sources without location or owner data
+    (e.g. an older CSV export). Known values are never overwritten. Returns the number
     of facilities and units changed.
     """
     import pandas as pd

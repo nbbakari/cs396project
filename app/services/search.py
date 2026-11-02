@@ -8,7 +8,8 @@ they always return the same rows for the same URL.
 Parameters
 ----------
 Basic filters (text filters match case-insensitively; "contains" filters also
-accept ``none`` for "no value" and ``any`` for "has a value"):
+accept ``none`` for "no value", ``any`` for "has a value", and ``not <text>``
+for "does not contain <text>", which includes rows with no value):
 
     facility_id     one or more EPA facility IDs, comma-separated   (equals)
     facility_name   (contains)          county          (contains)
@@ -18,8 +19,8 @@ accept ``none`` for "no value" and ``any`` for "has a value"):
     state           one or more two-letter codes, comma-separated
     year            one or more years, comma-separated
     year_min / year_max
-    primary_fuel, secondary_fuel, unit_type, so2_control, nox_control,
-    pm_control, program                                              (contains)
+    primary_fuel, secondary_fuel, unit_type, owner, so2_control,
+    nox_control, pm_control, hg_control, program                     (contains)
 
 Range filters, inclusive, each with ``_min`` and/or ``_max``:
 
@@ -67,9 +68,11 @@ TEXT_FILTERS = {
     "primary_fuel": (Unit.primary_fuel, "primary_fuel", "contains"),
     "secondary_fuel": (Unit.secondary_fuel, "secondary_fuel", "contains"),
     "unit_type": (Unit.unit_type, "unit_type", "contains"),
+    "owner": (Unit.owner_operator, "owner_operator", "contains"),
     "so2_control": (AnnualRecord.so2_control, "so2_control", "contains"),
     "nox_control": (AnnualRecord.nox_control, "nox_control", "contains"),
     "pm_control": (AnnualRecord.pm_control, "pm_control", "contains"),
+    "hg_control": (AnnualRecord.hg_control, "hg_control", "contains"),
     "program": (AnnualRecord.program_code, "program_code", "contains"),
 }
 
@@ -152,6 +155,7 @@ UNIT_COLUMNS = (
     Unit.unit_type,
     Unit.primary_fuel,
     Unit.secondary_fuel,
+    Unit.owner_operator,
     Unit.operating_date,
     Unit.retirement_date,
     AnnualRecord.id.label("record_id"),
@@ -166,6 +170,7 @@ UNIT_COLUMNS = (
     AnnualRecord.so2_control,
     AnnualRecord.nox_control,
     AnnualRecord.pm_control,
+    AnnualRecord.hg_control,
     AnnualRecord.program_code,
     AnnualRecord.dataset_id,
     Dataset.dataset_name,
@@ -193,6 +198,7 @@ UNIT_EXPORT_COLUMNS = [
     ("unit_type", "unit_type"),
     ("primary_fuel", "primary_fuel"),
     ("secondary_fuel", "secondary_fuel"),
+    ("owner_operator", "owner_operator"),
     ("operating_date", "commercial_operation_date"),
     ("retirement_date", "retirement_date"),
     ("reporting_year", "reporting_year"),
@@ -206,6 +212,7 @@ UNIT_EXPORT_COLUMNS = [
     ("so2_control", "so2_controls"),
     ("nox_control", "nox_controls"),
     ("pm_control", "pm_controls"),
+    ("hg_control", "hg_controls"),
     ("program_code", "program_codes"),
     ("dataset_id", "dataset_id"),
     ("dataset_name", "dataset_name"),
@@ -325,6 +332,8 @@ class Search:
                 yield f"{column} IS NULL"
             elif lowered == "any":
                 yield f"{column} IS NOT NULL"
+            elif _excluded(value):
+                yield f"{column} NOT CONTAINS '{_excluded(value)}'"
             else:
                 yield f"{column} CONTAINS '{value}'"
         for prefix, (low, high) in self.ranges.items():
@@ -486,6 +495,13 @@ def _escape_like(value: str) -> str:
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
+def _excluded(value: str) -> Optional[str]:
+    """The text after "not " in a "contains" filter value, if it has one."""
+    if value[:4].lower() == "not " and value[4:].strip():
+        return value[4:].strip()
+    return None
+
+
 def _row_conditions(search: Search) -> list[Any]:
     """Conditions on individual unit-year rows (the WHERE clause)."""
     conditions: list[Any] = []
@@ -498,6 +514,9 @@ def _row_conditions(search: Search) -> list[Any]:
             conditions.append(or_(column.is_(None), column == ""))
         elif lowered == "any":
             conditions.append(and_(column.is_not(None), column != ""))
+        elif _excluded(value):
+            pattern = f"%{_escape_like(_excluded(value))}%"
+            conditions.append(or_(column.is_(None), ~column.ilike(pattern, escape="\\")))
         else:
             conditions.append(column.ilike(f"%{_escape_like(value)}%", escape="\\"))
 
@@ -694,5 +713,6 @@ def filter_choices() -> dict[str, list[Any]]:
         "so2_controls": _distinct(AnnualRecord.so2_control, "|"),
         "nox_controls": _distinct(AnnualRecord.nox_control, "|"),
         "pm_controls": _distinct(AnnualRecord.pm_control, "|"),
+        "hg_controls": _distinct(AnnualRecord.hg_control, "|"),
         "programs": _distinct(AnnualRecord.program_code, ","),
     }
