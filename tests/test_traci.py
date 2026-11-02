@@ -113,7 +113,9 @@ def test_factors_endpoint(client, app, workbook):
     body = client.get("/api/traci/factors").get_json()
     assert body["version"] == "2.2" and len(body["factors"]) == 6
     labels = {f["impact_label"] for f in body["factors"]}
-    assert "Global warming" in labels and "Smog formation" in labels
+    assert "Global warming potential (climate change)" in labels
+    assert "Acidification (acid rain)" in labels
+    assert "Photochemical ozone formation (smog)" in labels
 
 
 def upgrade_to(url, revision="head"):
@@ -169,4 +171,5 @@ def test_builder_page_lists_the_factors(client, app, workbook):
     save_factors(read_workbook(workbook))
     html = client.get("/analysis").get_data(as_text=True)
     assert "EPA TRACI 2.2" in html
-    assert "NITROGEN OXIDES" in html and "Smog formation" in html
+    assert "NITROGEN OXIDES" in html and "Photochemical ozone formation (smog)" in html
+    assert "Acidification (acid rain)" in html

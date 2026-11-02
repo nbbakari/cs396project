@@ -43,7 +43,7 @@ import numpy as np
 import pandas as pd
 from werkzeug.datastructures import MultiDict
 
-from app import db
+from app import db, glossary
 from app.services.search import UNIT_COLUMNS, Search, build_statement, parse_search
 
 LEVELS = ("unit", "facility")
@@ -69,8 +69,14 @@ class Variable:
     numerator: Optional[str] = None
     denominator: Optional[str] = None
 
+    @property
+    def meaning(self) -> str:
+        """The everyday meaning, e.g. "electricity generated" for gross load."""
+        return glossary.meaning(self.name)
+
     def as_dict(self) -> dict[str, Any]:
-        return {k: v for k, v in dataclasses.asdict(self).items() if v is not None}
+        values = {k: v for k, v in dataclasses.asdict(self).items() if v is not None}
+        return {**values, "meaning": self.meaning} if self.meaning else values
 
 
 MEASURED = {
@@ -438,6 +444,7 @@ def categorical_summary(frame: pd.DataFrame, level: str = "unit") -> list[dict[s
             {
                 "variable": name,
                 "label": CATEGORICAL[name],
+                "meaning": glossary.meaning(name),
                 "distinct": int(values[~blank].nunique()),
                 "missing": int(blank.sum()),
                 "missing_pct": round(100 * int(blank.sum()) / total, 1) if total else None,

@@ -123,9 +123,10 @@ def download():
     sheet.append(["year_over_year", ", ".join(about["year_over_year"]) or "none"])
     sheet.append(["selection", json.dumps(about["selection"])])
     sheet.append([])
-    sheet.append(["variable", "label", "unit", "definition"])
+    sheet.append(["variable", "label", "unit", "definition", "everyday meaning"])
     for name, definition in about["definitions"].items():
-        sheet.append([name, definition["label"], definition["unit"], definition["definition"]])
+        sheet.append([name, definition["label"], definition["unit"], definition["definition"],
+                      definition.get("meaning", "")])
     output = io.BytesIO()
     workbook.save(output)
     return Response(

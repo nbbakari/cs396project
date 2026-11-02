@@ -392,3 +392,16 @@ dl.facts dd { margin: 0; }
 .table-data.wrap-head th,
 .table-data.wrap-head th.num { white-space: normal; vertical-align: bottom; min-width: 4.5rem; }
 .table-data.wrap-head td:first-child { min-width: 9rem; }
+
+/* Everyday meaning under a technical column heading, e.g. "electricity generated". */
+.th-hint {
+  display: block;
+  font-size: 0.68rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: #64748b;
+  white-space: normal;
+  line-height: 1.2;
+  margin-top: 0.1rem;
+}

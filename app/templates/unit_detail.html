@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import th_hint %}
 
 {% block title %}Unit {{ unit.epa_unit_id }} &middot; {{ facility.facility_name }} &middot; epaData{% endblock %}
 {% block breadcrumb %}Unit &rsaquo; {{ facility.facility_name }} {{ unit.epa_unit_id }}{% endblock %}
@@ -72,17 +73,17 @@
     <thead>
       <tr>
         <th>Year</th>
-        <th class="num">Op. hours</th>
-        <th class="num">Gross load (MWh)</th>
-        <th class="num">Steam load (1000 lb)</th>
-        <th class="num">Heat input (MMBtu)</th>
-        <th class="num">CO₂ (tons)</th>
-        <th class="num">SO₂ (tons)</th>
-        <th class="num">NOx (tons)</th>
-        <th>SO₂ controls</th>
-        <th>NOx controls</th>
-        <th>PM controls</th>
-        <th>Hg controls</th>
+        <th class="num">Op. hours{{ th_hint('operating_time') }}</th>
+        <th class="num">Gross load (MWh){{ th_hint('gross_load') }}</th>
+        <th class="num">Steam load (1000 lb){{ th_hint('steam_load') }}</th>
+        <th class="num">Heat input (MMBtu){{ th_hint('heat_input') }}</th>
+        <th class="num">CO₂ (tons){{ th_hint('co2_mass') }}</th>
+        <th class="num">SO₂ (tons){{ th_hint('so2_mass') }}</th>
+        <th class="num">NOx (tons){{ th_hint('nox_mass') }}</th>
+        <th>SO₂ controls{{ th_hint('so2_control') }}</th>
+        <th>NOx controls{{ th_hint('nox_control') }}</th>
+        <th>PM controls{{ th_hint('pm_control') }}</th>
+        <th>Hg controls{{ th_hint('hg_control') }}</th>
         <th>Programs</th>
         <th>Source</th>
       </tr>

@@ -50,6 +50,7 @@ from sqlalchemy import Select, and_, func, or_, select
 from werkzeug.datastructures import MultiDict
 
 from app import db
+from app.glossary import with_meaning
 from app.models import AnnualRecord, Dataset, Facility, Unit
 
 DEFAULT_PER_PAGE = 25
@@ -88,13 +89,14 @@ RANGE_FILTERS = {
 
 METRICS = ("operating_time", "gross_load", "heat_input", "co2_mass", "so2_mass", "nox_mass")
 
+# "Term (everyday meaning, unit)", e.g. "Gross load (electricity generated, MWh)".
 METRIC_LABELS = {
-    "operating_time": "Operating time (h)",
-    "gross_load": "Gross load (MWh)",
-    "heat_input": "Heat input (MMBtu)",
-    "co2_mass": "CO2 (short tons)",
-    "so2_mass": "SO2 (short tons)",
-    "nox_mass": "NOx (short tons)",
+    "operating_time": with_meaning("Operating time", "operating_time"),
+    "gross_load": with_meaning("Gross load", "gross_load", "MWh"),
+    "heat_input": with_meaning("Heat input", "heat_input", "MMBtu"),
+    "co2_mass": with_meaning("CO2", "co2_mass", "short tons"),
+    "so2_mass": with_meaning("SO2", "so2_mass", "short tons"),
+    "nox_mass": with_meaning("NOx", "nox_mass", "short tons"),
 }
 
 UNIT_SORTS = {

@@ -106,10 +106,10 @@
     <summary class="small fw-semibold text-body-secondary">More filters, ranges and ranking</summary>
     <div class="row g-2 mt-1">
       {{ text_input('secondary_fuel', 'Secondary fuel', 'contains…', 'secondary_fuels') }}
-      {{ text_input('so2_control', 'SO₂ control', 'contains, none, any, not …', 'so2_controls') }}
-      {{ text_input('nox_control', 'NOx control', 'contains, none, any, not …', 'nox_controls') }}
-      {{ text_input('pm_control', 'PM control', 'contains, none, any, not …', 'pm_controls') }}
-      {{ text_input('hg_control', 'Hg control', 'contains, none, any, not …', 'hg_controls') }}
+      {{ text_input('so2_control', 'SO₂ control (' ~ meaning('so2_control') ~ ')', 'contains, none, any, not …', 'so2_controls') }}
+      {{ text_input('nox_control', 'NOx control (' ~ meaning('nox_control') ~ ')', 'contains, none, any, not …', 'nox_controls') }}
+      {{ text_input('pm_control', 'PM control (' ~ meaning('pm_control') ~ ')', 'contains, none, any, not …', 'pm_controls') }}
+      {{ text_input('hg_control', 'Hg control (' ~ meaning('hg_control') ~ ')', 'contains, none, any, not …', 'hg_controls') }}
       {{ text_input('owner', 'Owner / operator', 'contains…') }}
       {{ text_input('program', 'Program code', 'e.g. ARP', 'programs') }}
       <div class="col-6 col-md-3 col-xl-2">
@@ -122,9 +122,9 @@
     </div>
 
     <div class="row g-2 mt-2">
-      {% for prefix, (_, _, label, unit) in range_filters.items() %}
+      {% for prefix, (_, key, label, unit) in range_filters.items() %}
       <div class="col-6 col-md-4 col-xl-2">
-        <label class="form-label-sm" for="f-{{ prefix }}_min">{{ label }} ({{ unit }})</label>
+        <label class="form-label-sm" for="f-{{ prefix }}_min">{{ with_meaning(label, key, unit) }}</label>
         <div class="input-group input-group-sm">
           <input type="text" inputmode="decimal" class="form-control" id="f-{{ prefix }}_min" name="{{ prefix }}_min"
                  value="{{ request.args.get(prefix ~ '_min', '') }}" placeholder="min" aria-label="{{ label }} minimum">
@@ -254,13 +254,13 @@
             {{ sort_header('Year', 'reporting_year', search.sort, search.order) }}
             {{ sort_header('Unit type', 'unit_type', search.sort, search.order) }}
             {{ sort_header('Fuel', 'primary_fuel', search.sort, search.order) }}
-            {{ sort_header('Op. hours', 'operating_time', search.sort, search.order, num=true) }}
+            {{ sort_header('Op. hours', 'operating_time', search.sort, search.order, num=true, hint=meaning('operating_time')) }}
           {% endif %}
-          {{ sort_header('Gross load (MWh)', 'gross_load', search.sort, search.order, num=true) }}
-          {{ sort_header('Heat input (MMBtu)', 'heat_input', search.sort, search.order, num=true) }}
-          {{ sort_header('CO₂ (tons)', 'co2_mass', search.sort, search.order, num=true) }}
-          {{ sort_header('SO₂ (tons)', 'so2_mass', search.sort, search.order, num=true) }}
-          {{ sort_header('NOx (tons)', 'nox_mass', search.sort, search.order, num=true) }}
+          {{ sort_header('Gross load (MWh)', 'gross_load', search.sort, search.order, num=true, hint=meaning('gross_load')) }}
+          {{ sort_header('Heat input (MMBtu)', 'heat_input', search.sort, search.order, num=true, hint=meaning('heat_input')) }}
+          {{ sort_header('CO₂ (tons)', 'co2_mass', search.sort, search.order, num=true, hint=meaning('co2_mass')) }}
+          {{ sort_header('SO₂ (tons)', 'so2_mass', search.sort, search.order, num=true, hint=meaning('so2_mass')) }}
+          {{ sort_header('NOx (tons)', 'nox_mass', search.sort, search.order, num=true, hint=meaning('nox_mass')) }}
         </tr>
       </thead>
       <tbody>

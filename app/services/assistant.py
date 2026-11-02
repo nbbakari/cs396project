@@ -45,6 +45,7 @@ from app.services.analysis import (
     selected_units,
 )
 from app.services.search import parse_search
+from app.glossary import glossary_text
 from app.services.traci import CATEGORY_LABELS, factors_for
 
 try:  # Optional: the app runs without the Gemini client installed.
@@ -105,7 +106,11 @@ AI_RULES = (
     "10. You cannot change data or settings. For retrieving data from the EPA, uploading or "
     "approving a file, deleting a dataset, saving an API key or loading shared data, open "
     "the right page (pre-filled where possible) and tell the user exactly which button to "
-    "press. Never ask for, repeat or guess API keys or passwords."
+    "press. Never ask for, repeat or guess API keys or passwords. "
+    "11. Many users are not scientists. Each time you first use a technical term in an "
+    "answer, add its everyday meaning in parentheses, for example 'acidification (acid "
+    "rain)', 'heat rate (fuel burned per MWh; lower is more efficient)' or 'NOx (nitrogen "
+    "oxides)'. Use the glossary below, and keep explanations short."
 )
 
 SITE_GUIDE = (
@@ -673,7 +678,7 @@ def system_instruction() -> str:
     else:
         data = (f" Reporting years with data: {', '.join(str(y) for y in years)}."
                 f" When the user gives no year, use the latest one, {years[-1]}.")
-    return AI_RULES + data + " " + SITE_GUIDE
+    return AI_RULES + data + " " + SITE_GUIDE + " Glossary: " + glossary_text() + "."
 
 
 def screen_text(page: Any) -> Optional[str]:

@@ -10,6 +10,8 @@ from urllib.parse import urlencode
 
 from flask import Flask, request, url_for
 
+from app.glossary import meaning, traci_category, with_meaning
+
 
 def _number(value: Any, decimals: int = 0) -> str:
     """Format a number with thousands separators; blank for None."""
@@ -101,6 +103,9 @@ def register_template_helpers(app: Flask) -> None:
     app.add_template_filter(_significant, "sig")
     app.add_template_filter(_when, "when")
     app.add_template_filter(_from_json, "fromjson")
+    app.add_template_global(meaning)
+    app.add_template_global(with_meaning)
+    app.add_template_global(traci_category)
     app.add_template_global(url_with)
     app.add_template_global(url_for_query)
     app.add_template_global(sort_url)

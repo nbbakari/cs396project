@@ -30,6 +30,7 @@ Built for CS396 coursework.
 - [Units, assumptions and limitations](#units-assumptions-and-limitations)
 - [Phase 2: analytical data layer](#phase-2-analytical-data-layer)
 - [AI assistant](#ai-assistant)
+- [Glossary](#glossary)
 - [JSON API](#json-api)
 - [Running the tests](#running-the-tests)
 - [Project structure](#project-structure)
@@ -110,7 +111,7 @@ environment and an empty database.
 
    `.env` needs no changes for these steps. Its `SHARED_DATABASE_URL` line is
    a placeholder and is only used by the optional team features.
-3. **Run the automated tests.** `python -m pytest`. Expected: `163 passed`.
+3. **Run the automated tests.** `python -m pytest`. Expected: `168 passed`.
 4. **Start the app.** `flask run`, then open <http://127.0.0.1:5000/>. The
    database `data/epadata.db` is created on the first page load and starts
    empty.
@@ -456,14 +457,14 @@ The `traci_factors` table holds EPA TRACI 2.2 factors, read from EPA's workbook
 `NITROGEN OXIDES`, never to `NITROGEN DIOXIDE` or `NITRIC OXIDE`. The
 migration seeds these six factors, so every database has them with no extra step:
 
-| CAMPD column | TRACI substance | Impact category | Factor | Unit |
+| CAMPD column | TRACI substance | Impact category (shown in the app as) | Factor | Unit |
 | --- | --- | --- | --- | --- |
-| `co2_mass` | CARBON DIOXIDE | Global Climate | 1 | kg CO2 eq / kg substance |
-| `so2_mass` | SULFUR DIOXIDE | Acidification | 1 | kg SO2 eq / kg substance |
-| `so2_mass` | SULFUR DIOXIDE | HH Particulate | 0.0611 | PM2.5 eq / kg substance |
-| `nox_mass` | NITROGEN OXIDES | Acidification | 0.7 | kg SO2 eq / kg substance |
-| `nox_mass` | NITROGEN OXIDES | HH Particulate | 0.00722 | PM2.5 eq / kg substance |
-| `nox_mass` | NITROGEN OXIDES | Photochemical Oxidation Formation | 24.79 | kg O3 eq / kg substance |
+| `co2_mass` | CARBON DIOXIDE | Global Climate: *Global warming potential (climate change)* | 1 | kg CO2 eq / kg substance |
+| `so2_mass` | SULFUR DIOXIDE | Acidification: *Acidification (acid rain)* | 1 | kg SO2 eq / kg substance |
+| `so2_mass` | SULFUR DIOXIDE | HH Particulate: *Particulate matter formation (fine dust and soot that harm breathing)* | 0.0611 | PM2.5 eq / kg substance |
+| `nox_mass` | NITROGEN OXIDES | Acidification: *Acidification (acid rain)* | 0.7 | kg SO2 eq / kg substance |
+| `nox_mass` | NITROGEN OXIDES | HH Particulate: *Particulate matter formation (fine dust and soot that harm breathing)* | 0.00722 | PM2.5 eq / kg substance |
+| `nox_mass` | NITROGEN OXIDES | Photochemical Oxidation Formation: *Photochemical ozone formation (smog)* | 24.79 | kg O3 eq / kg substance |
 
 ```bash
 flask traci load traci_2_2.xlsx   # re-import from EPA's workbook (re-running changes nothing)
@@ -591,6 +592,44 @@ the app is unaffected.
 - An answer that needs several tool calls can take up to about half a minute.
 - AI answers can contain mistakes. Check important numbers in the Data Explorer.
 
+## Glossary
+
+The people reading this data may not be scientists, so the app writes every
+technical term followed by its everyday meaning, for example **Acidification
+(acid rain)** or **Gross load (electricity generated, MWh)**. Narrow table
+columns show the meaning on a small line under the heading. The wording comes
+from one place, `app/glossary.py`, and the AI assistant uses the same glossary
+when it explains results. CSV and Excel column names stay technical
+(`co2_mass_short_tons`) so other software can read them. The Excel export's
+*about* sheet gives each variable's everyday meaning.
+
+| Term | Everyday meaning |
+| --- | --- |
+| CO₂ | carbon dioxide, the main gas behind global warming |
+| SO₂ | sulfur dioxide, a gas that causes acid rain and harms breathing |
+| NOx | nitrogen oxides, gases that cause smog and acid rain |
+| Hg | mercury, a toxic metal |
+| PM | particulate matter: fine dust and soot |
+| Gross load | the electricity a unit generated |
+| Heat input | the energy in the fuel a unit burned |
+| Heat rate | fuel burned per MWh of electricity; lower means more efficient |
+| Emission intensity | pollution per MWh of electricity generated |
+| Operating utilization | the share of the year a unit was running |
+| Unit | one generator (boiler or turbine) at a power plant |
+| Facility | a power plant, which can have several units |
+| MWh | megawatt-hour, 1,000 kilowatt-hours of electricity |
+| MMBtu | million British thermal units, a measure of heat energy |
+| Short ton | 2,000 pounds (907 kg) |
+| Year-over-year change | the change from the year before |
+| Global warming potential | climate change |
+| Acidification | acid rain |
+| Particulate matter formation | fine dust and soot that harm breathing |
+| Photochemical ozone formation | smog |
+| Ozone depletion | thinning of the ozone layer |
+| Characterization factor | how strongly 1 kg of a pollutant adds to an impact |
+| CO₂-eq, SO₂-eq, O₃-eq, PM2.5-eq | 'equivalent': the amount of the reference pollutant that would have the same effect |
+| Potential impact | a comparison of possible harm, not measured damage to people or places |
+
 ## JSON API
 
 All responses are JSON, including errors (`{"error": ..., "detail": ...}`).
@@ -614,7 +653,7 @@ See `CONNECT.md` for response shapes and front-end integration notes.
 pytest
 ```
 
-The suite (163 tests) runs against an in-memory SQLite database and a temporary
+The suite (168 tests) runs against an in-memory SQLite database and a temporary
 upload folder, and mocks the CAMPD API, so it needs no network or `.env`. It
 covers every validation rule, ingestion and re-import, database constraints,
 the search builder (filters, ranges, top-N, facility totals, group-and-rank,
@@ -632,6 +671,7 @@ epaData/
 ├── app/
 │   ├── __init__.py          # app factory, SQLite foreign keys, blueprints
 │   ├── models.py            # SQLAlchemy models (8 tables)
+│   ├── glossary.py          # everyday meanings of technical terms
 │   ├── cli.py               # flask campd ..., flask data ..., flask traci ...
 │   ├── templating.py        # Jinja filters and URL helpers
 │   ├── routes/

@@ -56,24 +56,24 @@
     {{ text_input('primary_fuel', 'Primary fuel', 'e.g. coal', 'primary_fuels') }}
     {{ text_input('unit_type', 'Unit type', 'contains…', 'unit_types') }}
     <div class="col-6 col-md-3 col-xl-2">
-      <label class="form-label-sm" for="f-op_time_min">Min. operating time (h)</label>
+      <label class="form-label-sm" for="f-op_time_min">Min. operating time (hours running)</label>
       <input type="number" min="0" class="form-control form-control-sm" id="f-op_time_min" name="op_time_min"
              value="{{ request.args.get('op_time_min', '') }}" placeholder="e.g. 1000">
     </div>
     <div class="col-6 col-md-3 col-xl-2">
-      <label class="form-label-sm" for="f-gross_load_min">Min. gross load (MWh)</label>
+      <label class="form-label-sm" for="f-gross_load_min">Min. gross load (electricity generated, MWh)</label>
       <input type="number" min="0" class="form-control form-control-sm" id="f-gross_load_min" name="gross_load_min"
              value="{{ request.args.get('gross_load_min', '') }}" placeholder="e.g. 100000">
     </div>
   </div>
 
   <details class="mt-3"{{ ' open' if controls_open }}>
-    <summary class="small fw-semibold text-body-secondary">Control technology and emissions programs</summary>
+    <summary class="small fw-semibold text-body-secondary">Control technology (pollution-removal equipment) and emissions programs</summary>
     <div class="row g-2 mt-1">
-      {{ text_input('so2_control', 'SO₂ control', 'contains, none, any, not …', 'so2_controls') }}
-      {{ text_input('nox_control', 'NOx control', 'contains, none, any, not …', 'nox_controls') }}
-      {{ text_input('pm_control', 'PM control', 'contains, none, any, not …', 'pm_controls') }}
-      {{ text_input('hg_control', 'Hg control', 'contains, none, any, not …', 'hg_controls') }}
+      {{ text_input('so2_control', 'SO₂ control (' ~ meaning('so2_control') ~ ')', 'contains, none, any, not …', 'so2_controls') }}
+      {{ text_input('nox_control', 'NOx control (' ~ meaning('nox_control') ~ ')', 'contains, none, any, not …', 'nox_controls') }}
+      {{ text_input('pm_control', 'PM control (' ~ meaning('pm_control') ~ ')', 'contains, none, any, not …', 'pm_controls') }}
+      {{ text_input('hg_control', 'Hg control (' ~ meaning('hg_control') ~ ')', 'contains, none, any, not …', 'hg_controls') }}
       {{ text_input('program', 'Program code', 'e.g. ARP', 'programs') }}
     </div>
   </details>
@@ -86,12 +86,12 @@
         <option value="facility"{{ ' selected' if is_facility }}>Facility-year (totals)</option>
       </select>
     </div>
-    <div class="col-6 col-md-3 col-xl-2">
+    <div class="col-6 col-md-4 col-xl-3">
       <label class="form-label-sm" for="f-yoy">Year-over-year change of</label>
       <select class="form-select form-select-sm" id="f-yoy" name="yoy">
         <option value="">(none)</option>
         {% for name, var in numeric.items() %}
-        <option value="{{ name }}"{{ ' selected' if analysis.yoy and analysis.yoy[0] == name }}>{{ var.label }}</option>
+        <option value="{{ name }}"{{ ' selected' if analysis.yoy and analysis.yoy[0] == name }}>{{ with_meaning(var.label, name) }}</option>
         {% endfor %}
       </select>
     </div>
@@ -183,7 +183,7 @@ CHANGE FROM PREVIOUS YEAR OF {{ analysis.yoy | join(', ') }}{% endif %}</pre>
     <tbody>
       {% for var, m in measured + derived %}
       <tr>
-        <td><span class="fw-semibold">{{ var.label }}</span><br><code class="small">{{ var.name }}</code></td>
+        <td><span class="fw-semibold">{{ var.label }}</span>{% if meaning(var.name) %} <span class="text-body-secondary">({{ meaning(var.name) }})</span>{% endif %}<br><code class="small">{{ var.name }}</code></td>
         <td><span class="kind-badge kind-{{ var.kind }}">{{ var.kind }}</span></td>
         <td class="small text-nowrap">{{ var.unit }}</td>
         <td class="small">{{ var.definition }}</td>
@@ -218,7 +218,7 @@ CHANGE FROM PREVIOUS YEAR OF {{ analysis.yoy | join(', ') }}{% endif %}</pre>
     <tbody>
       {% for c in categorical %}
       <tr>
-        <td class="fw-semibold">{{ c.label }}</td>
+        <td><span class="fw-semibold">{{ c.label }}</span>{% if meaning(c.variable) %} <span class="text-body-secondary">({{ meaning(c.variable) }})</span>{% endif %}</td>
         <td><code class="small">{{ c.variable }}</code></td>
         <td class="num">{{ c.distinct | num }}</td>
         <td class="num">{{ c.missing | num }}</td>
@@ -240,22 +240,22 @@ CHANGE FROM PREVIOUS YEAR OF {{ analysis.yoy | join(', ') }}{% endif %}</pre>
         {% if is_facility %}
           {{ sort_header('Year', 'reporting_year', current_sort, analysis.order) }}
           {{ sort_header('Units', 'unit_count', current_sort, analysis.order, num=true) }}
-          {{ sort_header('With gaps', 'units_with_missing_values', current_sort, analysis.order, num=true) }}
+          {{ sort_header('With gaps', 'units_with_missing_values', current_sort, analysis.order, num=true, hint=meaning('units_with_missing_values')) }}
         {% else %}
           {{ sort_header('Unit', 'epa_unit_id', current_sort, analysis.order) }}
           {{ sort_header('Year', 'reporting_year', current_sort, analysis.order) }}
           {{ sort_header('Fuel', 'primary_fuel', current_sort, analysis.order) }}
         {% endif %}
-        {{ sort_header('Gross load (MWh)', 'gross_load', current_sort, analysis.order, num=true) }}
-        {{ sort_header('CO₂ (tons)', 'co2_mass', current_sort, analysis.order, num=true) }}
-        {{ sort_header('CO₂ intensity (t/MWh)', 'co2_intensity', current_sort, analysis.order, num=true) }}
-        {{ sort_header('SO₂ intensity (t/MWh)', 'so2_intensity', current_sort, analysis.order, num=true) }}
-        {{ sort_header('NOx intensity (t/MWh)', 'nox_intensity', current_sort, analysis.order, num=true) }}
-        {{ sort_header('Heat rate (MMBtu/MWh)', 'heat_rate', current_sort, analysis.order, num=true) }}
-        {% if not is_facility %}{{ sort_header('Utilization', 'operating_utilization', current_sort, analysis.order, num=true) }}{% endif %}
+        {{ sort_header('Gross load (MWh)', 'gross_load', current_sort, analysis.order, num=true, hint=meaning('gross_load')) }}
+        {{ sort_header('CO₂ (tons)', 'co2_mass', current_sort, analysis.order, num=true, hint=meaning('co2_mass')) }}
+        {{ sort_header('CO₂ intensity (t/MWh)', 'co2_intensity', current_sort, analysis.order, num=true, hint=meaning('co2_intensity')) }}
+        {{ sort_header('SO₂ intensity (t/MWh)', 'so2_intensity', current_sort, analysis.order, num=true, hint=meaning('so2_intensity')) }}
+        {{ sort_header('NOx intensity (t/MWh)', 'nox_intensity', current_sort, analysis.order, num=true, hint=meaning('nox_intensity')) }}
+        {{ sort_header('Heat rate (MMBtu/MWh)', 'heat_rate', current_sort, analysis.order, num=true, hint=meaning('heat_rate')) }}
+        {% if not is_facility %}{{ sort_header('Utilization', 'operating_utilization', current_sort, analysis.order, num=true, hint=meaning('operating_utilization')) }}{% endif %}
         {% for name in analysis.yoy %}
-          {{ sort_header(numeric[name].label ~ ' change (' ~ numeric[name].unit ~ ')', name ~ '_change', current_sort, analysis.order, num=true) }}
-          {{ sort_header('% change', name ~ '_pct_change', current_sort, analysis.order, num=true) }}
+          {{ sort_header(numeric[name].label ~ ' change (' ~ numeric[name].unit ~ ')', name ~ '_change', current_sort, analysis.order, num=true, hint='from the year before') }}
+          {{ sort_header('% change', name ~ '_pct_change', current_sort, analysis.order, num=true, hint='from the year before') }}
         {% endfor %}
       </tr>
     </thead>
@@ -300,9 +300,11 @@ CHANGE FROM PREVIOUS YEAR OF {{ analysis.yoy | join(', ') }}{% endif %}</pre>
 
 <h2 class="h5 mb-1">Impact factors{% if factors %} &middot; EPA TRACI {{ factors[0].version }}{% endif %}</h2>
 <p class="small text-body-secondary mb-2">
-  The TRACI characterization factors stored for CAMPD's pollutants, emitted to air. A potential
-  impact is the emission in kilograms (1 short ton = 907.18474 kg) times its factor, added up
-  only within one impact category. These are potential impacts for comparison, not measured harm.
+  EPA's TRACI characterization factors (how strongly 1 kg of each pollutant adds to an impact)
+  for the pollutants CAMPD reports, emitted to air. A potential impact is the emission in kilograms
+  (1 short ton = 907.18474 kg) times its factor, added up only within one impact category. Units
+  such as &ldquo;kg SO2 eq&rdquo; (equivalent) mean the amount of the reference pollutant that would
+  have the same effect. These are potential impacts for comparison, not measured harm.
 </p>
 {% if factors %}
 <div class="table-wrap">
@@ -319,9 +321,9 @@ CHANGE FROM PREVIOUS YEAR OF {{ analysis.yoy | join(', ') }}{% endif %}</pre>
     <tbody>
       {% for f in factors %}
       <tr>
-        <td><code class="small">{{ f.campd_metric }}</code></td>
+        <td><code class="small">{{ f.campd_metric }}</code> <span class="small text-body-secondary">({{ meaning(f.campd_metric) }})</span></td>
         <td>{{ f.pollutant_name }}{% if f.cas_number %} <span class="small text-body-secondary">(CAS {{ f.cas_number }})</span>{% endif %}</td>
-        <td>{{ category_labels.get(f.impact_category, f.impact_category) }} <span class="small text-body-secondary">({{ f.impact_category }})</span></td>
+        <td>{{ category_labels.get(f.impact_category, f.impact_category) }} <span class="small text-body-secondary">TRACI: {{ f.impact_category }}</span></td>
         <td class="num">{{ f.factor_value | sig(4, trim=true) }}</td>
         <td class="small">{{ f.factor_unit }}</td>
       </tr>

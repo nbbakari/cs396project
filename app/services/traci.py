@@ -31,6 +31,7 @@ import openpyxl
 from sqlalchemy import select
 
 from app import db
+from app.glossary import TRACI_CATEGORIES
 from app.models import TraciFactor
 
 SOURCE_URL = "https://www.epa.gov/system/files/documents/2024-01/traci_2_2.xlsx"
@@ -43,14 +44,8 @@ CAMPD_SUBSTANCES: dict[str, tuple[str, Optional[str]]] = {
     "nox_mass": ("NITROGEN OXIDES", None),
 }
 
-# Plain-language names for TRACI's category headings, for display.
-CATEGORY_LABELS = {
-    "Global Climate": "Global warming",
-    "Acidification": "Acidification",
-    "HH Particulate": "Human health: particulate matter",
-    "Photochemical Oxidation Formation": "Smog formation",
-    "Ozone Depletion": "Ozone depletion",
-}
+# TRACI's category headings for display, e.g. "Acidification (acid rain)".
+CATEGORY_LABELS = TRACI_CATEGORIES
 
 _AIR_COLUMN = re.compile(r"^(?P<category>.+?) Air \((?P<unit>[^)]+)\)$")
 _VERSION = re.compile(r"TRACI[\s_]+(\d+(?:[._]\d+)*)", re.IGNORECASE)

@@ -27,12 +27,16 @@
 <span class="badge badge-severity-{{ severity }}">{{ 'Rejected' if severity == 'rejected' else 'Warning' }}</span>
 {% endmacro %}
 
-{% macro sort_header(label, key, current_sort, current_order, num=false) %}
+{% macro sort_header(label, key, current_sort, current_order, num=false, hint=none) %}
 <th scope="col" class="{{ 'num' if num }}{{ ' sorted' if key == current_sort }}"
     {% if key == current_sort %}aria-sort="{{ 'ascending' if current_order == 'asc' else 'descending' }}"{% endif %}>
   <a class="sort-link" href="{{ sort_url(key) }}">{{ label }}{% if key == current_sort %} {{ '&#9650;' | safe if current_order == 'asc' else '&#9660;' | safe }}{% endif %}</a>
+  {%- if hint %}<span class="th-hint">{{ hint }}</span>{% endif %}
 </th>
 {% endmacro %}
+
+{# The everyday meaning of a column, shown under its heading. #}
+{% macro th_hint(key) %}{% if meaning(key) %}<span class="th-hint">{{ meaning(key) }}</span>{% endif %}{% endmacro %}
 
 {% macro format_links(endpoint_url) %}
 <a class="btn btn-sm btn-outline-secondary" href="{{ endpoint_url }}{{ '&' if '?' in endpoint_url else '?' }}format=csv">CSV</a>
