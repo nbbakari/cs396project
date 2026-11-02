@@ -61,6 +61,14 @@
   .ai-typing span:nth-child(3) { animation-delay: .3s; }
   @keyframes aiDot { 0%, 80%, 100% { opacity: .25; } 40% { opacity: .9; } }
 
+  .ai-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .ai-action {
+    display: inline-block; border: 1px solid var(--bs-primary, #0d6efd); color: var(--bs-primary, #0d6efd);
+    border-radius: 999px; padding: 3px 10px; font-size: .78rem; text-decoration: none;
+  }
+  .ai-action:hover { background: var(--bs-primary, #0d6efd); color: #fff; }
+  .ai-status { font-size: .78rem; opacity: .75; margin: -4px 0 12px; }
+
   .ai-foot { padding: 10px 12px; border-top: 1px solid var(--bs-border-color, #dee2e6); }
   .ai-note { font-size: .7rem; opacity: .6; margin-top: 6px; }
 </style>
@@ -79,15 +87,19 @@
   <div class="ai-body" id="aiBody">
     <div class="ai-msg model">
       <div class="ai-bubble">
-        <p>Ask about the emissions data in plain English. I can look up facilities, explain what the numbers mean, show simple stats, and compare years.</p>
+        <p>Ask about the emissions data or the page you are on, in plain English. I can look up
+          facilities, explain what is on your screen, give statistics, compare years, and take you
+          to any page with the right filters.</p>
         {% if not gemini_installed or not gemini_key_masked %}
         <p class="small">Not set up on this computer yet: add a free Gemini API key on the
           <a href="{{ url_for('settings.settings_page', _anchor='gemini-key') }}">Settings page</a>.</p>
         {% endif %}
         <div class="ai-chips" id="aiChips">
+          <button type="button" class="ai-chip">Explain what is on this page</button>
           <button type="button" class="ai-chip">Top 10 CO₂ emitters in Ohio</button>
           <button type="button" class="ai-chip">Compare Ohio coal CO₂ across the years</button>
-          <button type="button" class="ai-chip">Which state had the highest CO₂ emissions?</button>
+          <button type="button" class="ai-chip">Open the dataset builder for Ohio coal units, 2019 to 2020</button>
+          <button type="button" class="ai-chip">What data and settings do I have?</button>
         </div>
       </div>
     </div>
@@ -98,27 +110,41 @@
       <input type="text" class="form-control" id="aiInput" placeholder="Ask a question…" autocomplete="off">
       <button class="btn btn-primary" type="button" id="aiSend">Send</button>
     </div>
-    <div class="ai-note">AI answers can contain mistakes. Check important numbers in the Data explorer.</div>
+    <div class="ai-note">The assistant sees this page's filters, numbers and tables (never passwords or keys). AI answers can contain mistakes; check important numbers in the Data Explorer.</div>
   </div>
 </aside>
 
 {% raw %}
 <script>
 (function () {
+  var STORE = "epadata-ai";
+  var MAX_SAVED = 40;
   var tab = document.getElementById("aiTab");
   var drawer = document.getElementById("aiDrawer");
   var body = document.getElementById("aiBody");
   var input = document.getElementById("aiInput");
   var sendBtn = document.getElementById("aiSend");
-  var history = [];
   var busy = false;
 
-  function setOpen(open) {
+  // The conversation is kept for this browser tab, so it survives moving between pages.
+  function load() {
+    try { return JSON.parse(sessionStorage.getItem(STORE)) || null; } catch (e) { return null; }
+  }
+  var state = load() || { history: [], messages: [], open: false };
+  function save() {
+    state.messages = state.messages.slice(-MAX_SAVED);
+    state.history = state.history.slice(-MAX_SAVED);
+    try { sessionStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* storage full or blocked */ }
+  }
+
+  function setOpen(open, focus) {
     drawer.classList.toggle("open", open);
     drawer.setAttribute("aria-hidden", open ? "false" : "true");
     tab.setAttribute("aria-expanded", open ? "true" : "false");
     tab.style.display = open ? "none" : "";
-    if (open) { setTimeout(function () { input.focus(); }, 260); }
+    state.open = open;
+    save();
+    if (open && focus !== false) { setTimeout(function () { input.focus(); }, 260); }
   }
 
   function escapeHtml(s) {
@@ -145,16 +171,151 @@
     return html;
   }
 
-  function addMessage(role, text, asHtml) {
+  function addActions(bubble, actions) {
+    if (!actions || !actions.length) { return; }
+    var row = document.createElement("div");
+    row.className = "ai-actions";
+    actions.forEach(function (action) {
+      if (typeof action.url !== "string" || action.url.charAt(0) !== "/" || action.url.charAt(1) === "/") { return; }
+      var link = document.createElement("a");
+      link.className = "ai-action";
+      link.href = action.url;
+      link.textContent = (action.type === "download" ? "⬇ " : "→ ") + (action.label || action.url);
+      if (action.type === "download") { link.setAttribute("download", ""); }
+      row.appendChild(link);
+    });
+    bubble.appendChild(row);
+  }
+
+  function addMessage(role, text, actions, asHtml) {
     var wrap = document.createElement("div");
     wrap.className = "ai-msg " + role;
     var bubble = document.createElement("div");
     bubble.className = "ai-bubble";
     if (asHtml) { bubble.innerHTML = text; } else if (role === "model") { bubble.innerHTML = format(text); } else { bubble.textContent = text; }
+    addActions(bubble, actions);
     wrap.appendChild(bubble);
     body.appendChild(wrap);
     body.scrollTop = body.scrollHeight;
     return wrap;
+  }
+
+  function addStatus(text) {
+    var note = document.createElement("div");
+    note.className = "ai-status";
+    note.textContent = text;
+    body.appendChild(note);
+    body.scrollTop = body.scrollHeight;
+  }
+
+  // ---- What is on the screen ---------------------------------------------------
+  function clean(el) { return (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim(); }
+
+  function labelFor(field) {
+    var label = field.id && document.querySelector('label[for="' + field.id + '"]');
+    return clean(label || field.closest("label") || field) || field.getAttribute("aria-label") || field.name;
+  }
+
+  function nearestTitle(el) {
+    var node = el.closest(".table-wrap") || el;
+    for (var i = 0; i < 6 && node; i++) {
+      var prev = node.previousElementSibling;
+      while (prev) {
+        if (/^H[1-6]$/.test(prev.tagName) || prev.classList.contains("panel-title")) { return clean(prev); }
+        prev = prev.previousElementSibling;
+      }
+      node = node.parentElement;
+      var title = node && node.querySelector(":scope > .panel-title");
+      if (title) { return clean(title); }
+    }
+    return "";
+  }
+
+  function pageContext(maxRows) {
+    var main = document.querySelector("main.app-content") || document.body;
+    var ctx = { url: location.pathname + location.search, title: document.title };
+    var crumb = document.querySelector(".app-topbar .crumb");
+    if (crumb) { ctx.section = clean(crumb); }
+    var h1 = main.querySelector("h1");
+    if (h1) { ctx.heading = clean(h1); }
+    var query = main.querySelector("pre.query-text");
+    if (query) { ctx.query = query.innerText.trim(); }
+
+    var alerts = Array.prototype.slice.call(main.querySelectorAll(".alert")).map(clean).filter(Boolean);
+    if (alerts.length) { ctx.messages = alerts.slice(0, 6); }
+
+    var stats = Array.prototype.slice.call(main.querySelectorAll(".stat-panel")).map(clean).filter(Boolean);
+    if (stats.length) { ctx.cards = stats.slice(0, 16); }
+
+    var facts = [];
+    main.querySelectorAll("dl.facts").forEach(function (dl) {
+      dl.querySelectorAll("dt").forEach(function (dt) {
+        var dd = dt.nextElementSibling;
+        if (dd && dd.tagName === "DD") { facts.push(clean(dt) + ": " + clean(dd)); }
+      });
+    });
+    if (facts.length) { ctx.facts = facts.slice(0, 40); }
+
+    // Form values the user has set; never password, hidden or file fields.
+    var fields = [];
+    main.querySelectorAll("form input, form select, form textarea").forEach(function (field) {
+      var type = (field.type || "").toLowerCase();
+      if (["password", "hidden", "file", "submit", "button", "reset"].indexOf(type) >= 0) { return; }
+      if (field.classList.contains("row-select") || field.id === "select-all") { return; }
+      var value;
+      if (type === "checkbox" || type === "radio") {
+        if (!field.checked) { return; }
+        value = "checked";
+      } else if (field.tagName === "SELECT") {
+        if (!field.value) { return; }
+        value = clean(field.options[field.selectedIndex] || field);
+      } else {
+        value = (field.value || "").trim();
+        if (!value) { return; }
+      }
+      fields.push({ field: field.name || field.id, label: labelFor(field), value: value.slice(0, 200) });
+    });
+    if (fields.length) { ctx.form = fields.slice(0, 60); }
+
+    var selected = main.querySelectorAll("input.row-select:checked").length;
+    if (selected) { ctx.selected_rows = selected; }
+
+    var tables = [];
+    main.querySelectorAll("table").forEach(function (table) {
+      if (tables.length >= 6) { return; }
+      var headers = Array.prototype.slice.call(table.querySelectorAll("thead th")).map(clean);
+      var rows = Array.prototype.slice.call(table.querySelectorAll("tbody tr"));
+      tables.push({
+        title: nearestTitle(table),
+        columns: headers,
+        rows_on_screen: rows.length,
+        rows: rows.slice(0, maxRows).map(function (tr) {
+          return Array.prototype.slice.call(tr.cells).map(function (td) { return clean(td).slice(0, 80); });
+        })
+      });
+    });
+    if (tables.length) { ctx.tables = tables; }
+
+    var pager = main.querySelector(".pagination .active");
+    if (pager) { ctx.current_page = clean(pager); }
+    ctx.text = clean(main).slice(0, 1500);
+    return ctx;
+  }
+
+  function snapshot() {
+    // Fewer table rows until the snapshot fits what the server accepts.
+    var rows = 25, ctx = pageContext(rows);
+    while (JSON.stringify(ctx).length > 14000 && rows > 3) {
+      rows = Math.floor(rows / 2);
+      ctx = pageContext(rows);
+    }
+    return ctx;
+  }
+
+  // ---- Asking ------------------------------------------------------------------
+  function remember(role, text, actions) {
+    state.messages.push({ role: role, text: text, actions: actions || [] });
+    save();
   }
 
   async function ask(question) {
@@ -164,27 +325,40 @@
     sendBtn.disabled = true;
     input.value = "";
     addMessage("user", q);
-    var typing = addMessage("model", '<span class="ai-typing"><span></span><span></span><span></span></span>', true);
+    remember("user", q);
+    var typing = addMessage("model", '<span class="ai-typing"><span></span><span></span><span></span></span>', null, true);
 
     try {
       var res = await fetch("/api/ai/query", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt: q, history: history })
+        body: JSON.stringify({ prompt: q, history: state.history, page: snapshot() })
       });
       var data = {};
       try { data = await res.json(); } catch (e) { data = { error: "Unexpected response from the server (" + res.status + ")." }; }
       typing.remove();
       if (data.error) {
         addMessage("error", data.error);
-      } else {
-        var answer = data.response || "No response generated.";
-        history.push({ role: "user", text: q }, { role: "model", text: answer });
-        addMessage("model", answer);
+        remember("error", data.error);
+        return;
+      }
+      var answer = data.response || "No response generated.";
+      var actions = Array.isArray(data.actions) ? data.actions : [];
+      state.history.push({ role: "user", text: q }, { role: "model", text: answer });
+      addMessage("model", answer, actions);
+      remember("model", answer, actions);
+
+      var go = actions.filter(function (a) { return a.type === "navigate" && a.open_now; }).pop();
+      if (go && go.url !== location.pathname + location.search) {
+        addStatus("Opening " + (go.label || "the page") + "…");
+        state.open = true;
+        save();
+        setTimeout(function () { window.location.assign(go.url); }, 900);
       }
     } catch (err) {
       typing.remove();
       addMessage("error", "Could not reach the server: " + err.message);
+      remember("error", "Could not reach the server: " + err.message);
     } finally {
       busy = false;
       sendBtn.disabled = false;
@@ -192,10 +366,15 @@
     }
   }
 
+  // ---- Wiring -----------------------------------------------------------------
+  state.messages.forEach(function (m) { addMessage(m.role, m.text, m.actions); });
+  if (state.open) { setOpen(true, false); }
+
   tab.addEventListener("click", function () { setOpen(true); });
   document.getElementById("aiClose").addEventListener("click", function () { setOpen(false); });
   document.getElementById("aiClear").addEventListener("click", function () {
-    history = [];
+    state = { history: [], messages: [], open: true };
+    save();
     var first = body.firstElementChild;
     body.innerHTML = "";
     if (first) { body.appendChild(first); }

@@ -110,7 +110,7 @@ environment and an empty database.
 
    `.env` needs no changes for these steps. Its `SHARED_DATABASE_URL` line is
    a placeholder and is only used by the optional team features.
-3. **Run the automated tests.** `python -m pytest`. Expected: `145 passed`.
+3. **Run the automated tests.** `python -m pytest`. Expected: `163 passed`.
 4. **Start the app.** `flask run`, then open <http://127.0.0.1:5000/>. The
    database `data/epadata.db` is created on the first page load and starts
    empty.
@@ -528,22 +528,44 @@ values and the indicator definitions.
 
 ## AI assistant
 
-The **Ask AI** tab on the right of every page opens a chat panel. Ask a question
-about the data in plain English, for example *"Top 10 CO₂ emitters in Ohio"* or
-*"Compare Ohio coal CO₂ across the years"*. Follow-up questions keep the
-context of the conversation.
+The **Ask AI** tab on the right of every page opens a chat panel. You can:
+
+- **Ask about the data:** *"Top 10 CO₂ emitters in Ohio"*, *"Compare Ohio coal
+  CO₂ across the years"*, *"What is the average heat rate of gas units in
+  Texas?"*
+- **Ask about your screen:** *"What filters am I using?"*, *"Explain this
+  table"*, *"Which row has the highest CO₂ intensity here?"*
+- **Ask about your setup:** *"What data and settings do I have?"*, *"Is any
+  import waiting for review?"*
+- **Ask it to take you somewhere or change the view:** *"Open the dataset
+  builder for these units for 2019 to 2020"*, *"Sort this by NOx"*, *"Show me
+  the Gavin plant"*, *"Give me a CSV of this"*
+
+The conversation follows you from page to page, and **New chat** starts over.
 
 **How it works** (`app/services/assistant.py`):
 
-1. The question goes to Google's Gemini model, with instructions about the data.
-2. Gemini must call one tool, `query_epa_database`. The tool runs real SQL on
-   this computer's database, with filters for year or year range, state,
-   facility, fuel, county and unit type.
-3. The tool returns results grouped by facility, state, unit or year, plus
-   statistics: counts, totals, CO₂ average, maximum and minimum, CO₂ intensity,
-   heat rate, and how many values were not reported.
-4. Gemini explains those numbers in plain English. It is told never to invent
-   numbers.
+1. With each question the panel sends a snapshot of the page you are looking
+   at: the address, heading, filters, form values, number cards and the first
+   rows of each table. Password and hidden fields are never included.
+2. Google's Gemini model reads the question, the snapshot and a guide to the
+   site's pages, and calls these tools:
+
+   | Tool | What it does |
+   | --- | --- |
+   | `query_epa_database` | Totals and rankings by facility, state, unit or year, and year-over-year changes, with real SQL |
+   | `summarize_records` | Count, missing values, mean, median, minimum and maximum of every measurement and derived indicator, for any selection |
+   | `get_app_status` | What data is loaded, recent imports, files waiting for review, which keys and services are set up (yes or no only), and the TRACI factors |
+   | `navigate` | Opens a page with filters, or offers a download link. Only the site's own pages are allowed; deleting or posting forms is not. |
+
+3. Gemini explains the results in plain English. It is told never to invent
+   numbers. When it navigates, the page opens right after its answer.
+
+**It cannot change data.** For retrieving data from the EPA, uploading or
+approving a file, deleting a dataset, saving a key or loading shared data, it
+opens the right page, pre-filled where possible, and tells you which button to
+press. The Data Retrieval form accepts `?year=&state=&fuel_type=...`, so it can
+be pre-filled.
 
 For year comparisons, the tool itself calculates each year's absolute and
 percentage change. The model only quotes them, because language models are
@@ -564,7 +586,9 @@ the app is unaffected.
 
 - The free tier has a usage limit. When it is reached, the panel says so. You
   can then set `GEMINI_MODEL` in `.env` to another model.
-- Questions, and the database results used to answer them, are sent to Google.
+- Questions, the page snapshot, and the database results used to answer them
+  are sent to Google.
+- An answer that needs several tool calls can take up to about half a minute.
 - AI answers can contain mistakes. Check important numbers in the Data Explorer.
 
 ## JSON API
@@ -578,7 +602,7 @@ All responses are JSON, including errors (`{"error": ..., "detail": ...}`).
 | `GET /api/emissions/years` | Reporting years with data, newest first |
 | `GET /api/analysis/summary` | For the selected records (explorer filters + `level`): counts of records, facilities, units, states and years; a missing-value summary per variable; and the variables available |
 | `GET /api/analysis/indicators` | Derived indicators for the selected records, with `level`, `yoy`, `sort`, `order`, `page`, `per_page` (≤ 1,000); missing values are `null`; includes indicator definitions |
-| `POST /api/ai/query` | AI assistant: `{"prompt": ..., "history": [...]}` → `{"response": ...}` (needs a Gemini key) |
+| `POST /api/ai/query` | AI assistant: `{"prompt": ..., "history": [...], "page": {...}}` → `{"response": ..., "actions": [...]}` (needs a Gemini key) |
 | `GET /api/traci/factors?version=` | Stored TRACI factors (latest version by default) |
 | `GET /api/emissions/interpret?q=` | Reads a plain-English description as search parameters; returns the parameters, how each phrase was read, unused words, and `explorer_url` / `records_url` for the same search |
 
@@ -590,13 +614,13 @@ See `CONNECT.md` for response shapes and front-end integration notes.
 pytest
 ```
 
-The suite (145 tests) runs against an in-memory SQLite database and a temporary
+The suite (163 tests) runs against an in-memory SQLite database and a temporary
 upload folder, and mocks the CAMPD API, so it needs no network or `.env`. It
 covers every validation rule, ingestion and re-import, database constraints,
 the search builder (filters, ranges, top-N, facility totals, group-and-rank,
 history), description-based search, missing-value flags, derived indicators and
 year-over-year changes, the analytical dataset builder and its downloads, the
-TRACI workbook reader and seed migration, the AI assistant's database tool and
+TRACI workbook reader and seed migration, the AI assistant's tools, navigation safety and
 error handling (with a fake Gemini client, so no key is needed), the upload → review → approve/cancel
 flow, retrieval, the API-key settings, a push/pull round trip through a shared
 database, every page, and every download.

@@ -364,10 +364,13 @@ def traci_factors():
 
 @ai_bp.route("/query", methods=["POST"])
 def ai_query():
-    """Answer a plain-English question about the data.
+    """Answer a plain-English question about the data or the page on screen.
 
-    Body: ``{"prompt": "...", "history": [{"role": "user"|"model", "text": "..."}]}``.
-    Returns ``{"response": "..."}``, or ``{"error": "..."}`` with a 4xx/5xx status.
+    Body: ``{"prompt": "...", "history": [{"role": "user"|"model", "text": "..."}],
+    "page": {...snapshot of the page the user is looking at...}}``.
+    Returns ``{"response": "...", "actions": [{"type": "navigate"|"download",
+    "url": "...", "label": "...", "open_now": bool}]}``, or ``{"error": "..."}``
+    with a 4xx/5xx status.
     """
     data = request.get_json(silent=True) or {}
     prompt = (data.get("prompt") or "").strip()
@@ -376,10 +379,10 @@ def ai_query():
     if len(prompt) > MAX_PROMPT_LENGTH:
         return jsonify({"error": f"Keep the question under {MAX_PROMPT_LENGTH} characters."}), 400
     try:
-        answer = ask(prompt, data.get("history"))
+        answer, actions = ask(prompt, data.get("history"), data.get("page"))
     except AssistantError as exc:
         return jsonify({"error": str(exc)}), exc.status
     except Exception:  # noqa: BLE001 - never hand the panel an HTML error page
         current_app.logger.exception("AI assistant endpoint failed")
         return jsonify({"error": "The assistant hit an unexpected error; see the server log."}), 500
-    return jsonify({"response": answer})
+    return jsonify({"response": answer, "actions": actions})
