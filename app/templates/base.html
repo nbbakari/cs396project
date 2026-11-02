@@ -65,10 +65,14 @@
             {% endfor %}
           </nav>
 
-          <div class="sidebar-section-label">Phase 2</div>
+          <div class="sidebar-section-label">Phase 2: Analysis</div>
           <nav class="sidebar-nav nav flex-column gap-1">
-            <span class="nav-link disabled">Environmental Evaluation <span class="planned-badge">Planned</span></span>
-            <span class="nav-link disabled">Multi-indicator Scoring <span class="planned-badge">Planned</span></span>
+            <a class="nav-link{{ ' active' if active_endpoint == 'analysis.builder' }}" href="{{ url_for('analysis.builder') }}"
+               {% if active_endpoint == 'analysis.builder' %}aria-current="page"{% endif %}>Analytical Dataset Builder</a>
+            <span class="nav-link disabled">Statistics &amp; Comparison <span class="planned-badge">Planned</span></span>
+            <span class="nav-link disabled">Visualization Dashboard <span class="planned-badge">Planned</span></span>
+            <span class="nav-link disabled">TRACI Impact Indicators <span class="planned-badge">Planned</span></span>
+            <span class="nav-link disabled">Prediction &amp; Scenarios <span class="planned-badge">Planned</span></span>
           </nav>
       
 
@@ -108,7 +112,7 @@
                 Database unavailable
               {% endif %}
             </span>
-            <span class="badge badge-phase">Phase 1: Data Management</span>
+            <span class="badge badge-phase">{% block phase_badge %}Phase 1: Data Management{% endblock %}</span>
           </div>
         </header>
 

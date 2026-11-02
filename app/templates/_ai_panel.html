@@ -80,10 +80,14 @@
     <div class="ai-msg model">
       <div class="ai-bubble">
         <p>Ask about the emissions data in plain English. I can look up facilities, explain what the numbers mean, show simple stats, and compare years.</p>
+        {% if not gemini_installed or not gemini_key_masked %}
+        <p class="small">Not set up on this computer yet: add a free Gemini API key on the
+          <a href="{{ url_for('settings.settings_page', _anchor='gemini-key') }}">Settings page</a>.</p>
+        {% endif %}
         <div class="ai-chips" id="aiChips">
-          <button type="button" class="ai-chip">Top 10 CO₂ emitters in Kentucky in 2022</button>
-          <button type="button" class="ai-chip">Compare Kentucky CO₂ in 2021 vs 2022</button>
-          <button type="button" class="ai-chip">Which state had the highest CO₂ in 2023?</button>
+          <button type="button" class="ai-chip">Top 10 CO₂ emitters in Ohio</button>
+          <button type="button" class="ai-chip">Compare Ohio coal CO₂ across the years</button>
+          <button type="button" class="ai-chip">Which state had the highest CO₂ emissions?</button>
         </div>
       </div>
     </div>

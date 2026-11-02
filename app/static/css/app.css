@@ -380,3 +380,15 @@ dl.facts dd { margin: 0; }
   color: #94a3b8;
   margin-right: 0.4rem;
 }
+
+/* Analytical dataset builder */
+.missing-value { color: #94a3b8; }
+.missing-bar { height: 0.45rem; background: #e2e8f0; border-radius: 999px; overflow: hidden; min-width: 4rem; }
+.missing-bar span { display: block; height: 100%; background: #d97706; border-radius: 999px; }
+.kind-badge { display: inline-block; font-size: 0.72rem; font-weight: 600; padding: 0.1rem 0.45rem; border-radius: 999px; text-transform: uppercase; letter-spacing: 0.02em; }
+.kind-badge.kind-measured { background: #e0f2fe; color: #075985; }
+.kind-badge.kind-derived { background: #ccfbf1; color: #115e59; }
+/* Many numeric columns: let headings wrap so the preview fits the page. */
+.table-data.wrap-head th,
+.table-data.wrap-head th.num { white-space: normal; vertical-align: bottom; min-width: 4.5rem; }
+.table-data.wrap-head td:first-child { min-width: 9rem; }

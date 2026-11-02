@@ -12,6 +12,8 @@ Schema overview::
        +--1 UploadedFile          (the original file / API response as received)
        +--* DataQualityIssue      (every rejected or flagged source row)
 
+    TraciFactor                   (EPA TRACI factors for CO2, SO2, NOx to air)
+
 Units of measure follow CAMPD: operating time in hours, gross load in MWh,
 steam load in 1000 lb, heat input in MMBtu, and CO2/SO2/NOx mass in short tons.
 """
@@ -198,6 +200,10 @@ class AnnualRecord(db.Model):
     pm_control: Mapped[Optional[str]] = mapped_column(String(150))
     hg_control: Mapped[Optional[str]] = mapped_column(String(150))
     program_code: Mapped[Optional[str]] = mapped_column(String(100))
+    # Comma-separated metric columns that were blank in the source row and are
+    # stored as 0 (e.g. "gross_load,co2_mass"). Analysis treats them as
+    # missing rather than as measured zeros.
+    missing_metrics: Mapped[Optional[str]] = mapped_column(String(100))
 
     unit: Mapped["Unit"] = relationship(back_populates="annual_records")
     dataset: Mapped["Dataset"] = relationship(back_populates="annual_records")
@@ -296,3 +302,37 @@ class DataQualityIssue(db.Model):
     raw_values: Mapped[Optional[str]] = mapped_column(Text)
 
     dataset: Mapped["Dataset"] = relationship(back_populates="issues")
+
+
+class TraciFactor(db.Model):
+    """One EPA TRACI characterization factor: one substance, one impact category.
+
+    Only factors matched exactly to a pollutant CAMPD reports (CO2, SO2, NOx)
+    emitted to air are stored, each with the CAMPD column it applies to, so an
+    impact result can always name the TRACI version and factor it used.
+    """
+
+    __tablename__ = "traci_factors"
+    __table_args__ = (
+        UniqueConstraint(
+            "version", "pollutant_name", "medium", "impact_category", name="uq_traci_factor"
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    version: Mapped[str] = mapped_column(String(20), index=True)
+    # The substance as TRACI names it, e.g. "NITROGEN OXIDES".
+    pollutant_name: Mapped[str] = mapped_column(String(150))
+    cas_number: Mapped[Optional[str]] = mapped_column(String(20))
+    # The annual_records column the factor applies to, e.g. "nox_mass".
+    campd_metric: Mapped[str] = mapped_column(String(20), index=True)
+    medium: Mapped[str] = mapped_column(String(20), default="air")
+    impact_category: Mapped[str] = mapped_column(String(100))
+    factor_value: Mapped[float]
+    # As TRACI states it, e.g. "kg SO2 eq / kg substance".
+    factor_unit: Mapped[str] = mapped_column(String(60))
+    source: Mapped[Optional[str]] = mapped_column(Text)
+    imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    def __repr__(self) -> str:
+        return f"<TraciFactor {self.version} {self.pollutant_name} {self.impact_category}>"

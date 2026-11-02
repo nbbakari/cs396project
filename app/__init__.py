@@ -47,6 +47,12 @@ def _database_urls() -> tuple[str, str | None]:
     return url or f"sqlite:///{DEFAULT_DATABASE_PATH}", shared
 
 
+def _gemini_key_from_env() -> str | None:
+    """GEMINI_API_KEY (or GOOGLE_API_KEY), ignoring the .env.example placeholder."""
+    key = (os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or "").strip()
+    return None if key in ("", "your-gemini-api-key-here") else key
+
+
 def _api_key_from_env() -> str | None:
     """CAMPD_API_KEY, ignoring the placeholder that older .env.example files set."""
     key = (os.getenv("CAMPD_API_KEY") or "").strip()
@@ -103,6 +109,9 @@ def create_app(config_overrides: dict | None = None) -> Flask:
         CAMPD_API_BASE_URL=os.getenv(
             "CAMPD_API_BASE_URL", "https://api.epa.gov/easey"
         ),
+        # Google Gemini, for the optional AI assistant panel.
+        GEMINI_API_KEY=_gemini_key_from_env(),
+        GEMINI_MODEL=os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite"),
     )
 
     if config_overrides:
@@ -123,6 +132,7 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     # `flask db migrate` can see every table.
     from app import models  # noqa: F401
 
+    from app.routes.analysis import analysis_bp
     from app.routes.api import ai_bp, api_bp
     from app.routes.download import download_bp
     from app.routes.main import main_bp
@@ -137,6 +147,7 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     app.register_blueprint(settings_bp)
     app.register_blueprint(api_bp)
     app.register_blueprint(ai_bp)
+    app.register_blueprint(analysis_bp)
 
     from app.cli import register_cli
     from app.templating import register_template_helpers

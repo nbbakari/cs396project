@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlencode
@@ -18,6 +19,24 @@ def _number(value: Any, decimals: int = 0) -> str:
         return f"{float(value):,.{decimals}f}"
     except (TypeError, ValueError):
         return str(value)
+
+
+def _significant(value: Any, digits: int = 3, trim: bool = False) -> str:
+    """A number to about ``digits`` significant figures, so small ratios such as
+    0.000412 stay readable; blank for None or NaN. ``trim`` drops trailing zeros."""
+    if value is None or value == "":
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if math.isnan(number):
+        return ""
+    if number == 0:
+        return "0"
+    decimals = max(0, min(8, digits - 1 - math.floor(math.log10(abs(number)))))
+    text = f"{number:,.{decimals}f}"
+    return text.rstrip("0").rstrip(".") if trim and "." in text else text
 
 
 def _when(value: Any, fmt: str = "%Y-%m-%d %H:%M") -> str:
@@ -79,6 +98,7 @@ def sort_url(key: str) -> str:
 
 def register_template_helpers(app: Flask) -> None:
     app.add_template_filter(_number, "num")
+    app.add_template_filter(_significant, "sig")
     app.add_template_filter(_when, "when")
     app.add_template_filter(_from_json, "fromjson")
     app.add_template_global(url_with)

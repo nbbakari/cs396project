@@ -6,6 +6,8 @@
     flask data pull-shared                   seed an empty database from the team's
                                              shared (Supabase) database
     flask data push-shared                   publish this database to the shared one
+    flask traci load traci_2_2.xlsx          import EPA TRACI factors for CO2, SO2, NOx
+    flask traci list                         show the stored TRACI factors
 
 CLI imports skip the review page but go through the same validation, so every
 rejected row is still recorded in the dataset's data-quality report.
@@ -28,9 +30,11 @@ from app.services.ingest import (
     stage_bytes,
 )
 from app.services.shared import SharedDataError, pull_shared, push_shared
+from app.services.traci import SOURCE_URL, TraciError, factors_for, read_workbook, save_factors
 
 campd_cli = AppGroup("campd", help="Retrieve data from the EPA CAMPD API.")
 data_cli = AppGroup("data", help="Database maintenance.")
+traci_cli = AppGroup("traci", help="EPA TRACI characterization factors.")
 
 
 def _fetch_and_import(
@@ -175,6 +179,42 @@ def pull_shared_command():
     click.echo("Done. The shared data is now stored on this computer.")
 
 
+@traci_cli.command("load")
+@click.argument("workbook", type=click.Path(exists=True, dir_okay=False))
+@click.option("--version", help="TRACI version, if the workbook does not name it.")
+def traci_load_command(workbook, version):
+    """Import the CO2, SO2 and NOx air-emission factors from an EPA TRACI workbook.
+
+    Download the workbook from the EPA TRACI page, e.g. the TRACI 2.2 file
+    (see app/services/traci.py). Re-loading a workbook changes nothing.
+    """
+    try:
+        factors = read_workbook(workbook, version=version)
+    except TraciError as exc:
+        raise click.ClickException(str(exc)) from None
+    inserted, updated = save_factors(factors)
+    db.session.commit()
+    click.echo(
+        f"TRACI {factors[0]['version']}: {len(factors)} factors read, "
+        f"{inserted} added, {updated} updated."
+    )
+
+
+@traci_cli.command("list")
+@click.option("--version", help="TRACI version (default: the latest stored).")
+def traci_list_command(version):
+    """Show the stored TRACI factors."""
+    factors = factors_for(version)
+    if not factors:
+        raise click.ClickException(f"No TRACI factors stored. Get them from {SOURCE_URL}")
+    for f in factors:
+        click.echo(
+            f"TRACI {f.version}  {f.campd_metric:<9} {f.pollutant_name:<16} "
+            f"{f.impact_category:<34} {f.factor_value:<22.10g} {f.factor_unit}"
+        )
+
+
 def register_cli(app: Flask) -> None:
     app.cli.add_command(campd_cli)
     app.cli.add_command(data_cli)
+    app.cli.add_command(traci_cli)

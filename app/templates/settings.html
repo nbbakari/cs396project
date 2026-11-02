@@ -16,7 +16,7 @@
 
 {% block content %}
 <h1 class="h4 mb-1">Settings</h1>
-<p class="page-intro mb-4">Your CAMPD API key and where this computer&rsquo;s data comes from.</p>
+<p class="page-intro mb-4">Your API keys and where this computer&rsquo;s data comes from.</p>
 
 <div class="panel mb-4" id="api-key">
   <div class="panel-title">CAMPD API key</div>
@@ -43,6 +43,43 @@
     The key is stored as <code>CAMPD_API_KEY</code> in the <code>.env</code> file on this
     computer, read only by the server, and sent only to the EPA. It is never shown in
     full, put in a page or URL, or committed to Git.
+  </p>
+</div>
+
+<div class="panel mb-4" id="gemini-key">
+  <div class="panel-title">Gemini API key (AI assistant)</div>
+  {% if not gemini_installed %}
+  <p class="mb-0"><span class="badge text-bg-warning me-1">Not installed</span>
+    The AI assistant needs the <code>google-genai</code> package. Run
+    <code>pip install -r requirements.txt</code> and restart the app.</p>
+  {% elif gemini_key_masked %}
+  <p class="mb-3">
+    <span class="badge text-bg-success me-1">Connected</span>
+    Key ending <code>{{ gemini_key_masked }}</code> is saved on this computer. The
+    <strong>Ask AI</strong> panel on every page is ready.
+  </p>
+  <form method="post" action="{{ url_for('settings.remove_gemini_key') }}"
+        onsubmit="return confirm('Remove the Gemini key from this computer?');">
+    <button type="submit" class="btn btn-sm btn-outline-danger">Remove key</button>
+  </form>
+  {% else %}
+  <p class="mb-2"><span class="badge text-bg-secondary me-1">Not set</span>
+    The <strong>Ask AI</strong> panel answers questions about the data in plain English. It needs a free Gemini API key.</p>
+  <ol class="small mb-3 ps-3">
+    <li class="mb-1">Create a key in <a href="{{ gemini_key_signup_url }}" target="_blank" rel="noopener">Google AI Studio</a> (sign in with a Google account, then <em>Create API key</em>).</li>
+    <li>Paste it below. epaData checks it with Google and saves it on this computer.</li>
+  </ol>
+  <form method="post" action="{{ url_for('settings.save_gemini_key') }}" class="d-flex flex-wrap gap-2 mb-2">
+    <label for="gemini_key" class="visually-hidden">Gemini API key</label>
+    <input type="password" class="form-control" style="max-width: 28rem" id="gemini_key" name="gemini_key"
+           autocomplete="off" spellcheck="false" placeholder="Paste your Gemini API key" required>
+    <button type="submit" class="btn btn-primary">Check and save key</button>
+  </form>
+  {% endif %}
+  <p class="small text-body-secondary mt-3 mb-0">
+    The key is stored as <code>GEMINI_API_KEY</code> in the <code>.env</code> file on this
+    computer and sent only to Google. Questions you ask, and the database results used to
+    answer them, are sent to Google&rsquo;s Gemini service.
   </p>
 </div>
 

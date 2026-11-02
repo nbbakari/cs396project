@@ -172,6 +172,7 @@ UNIT_COLUMNS = (
     AnnualRecord.pm_control,
     AnnualRecord.hg_control,
     AnnualRecord.program_code,
+    AnnualRecord.missing_metrics,
     AnnualRecord.dataset_id,
     Dataset.dataset_name,
     Dataset.data_source,
@@ -305,6 +306,11 @@ class Search:
         if self.limit:
             lines.append(f"LIMIT {self.limit}")
         return "\n".join(lines)
+
+    def describe_filters(self) -> str:
+        """Just the record filters (the WHERE clause), for display."""
+        where = list(self._describe_where())
+        return "WHERE " + "\n  AND ".join(where) if where else "All records"
 
     def _describe_where(self) -> Iterator[str]:
         if self.facility_ids:

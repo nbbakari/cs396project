@@ -1,0 +1,339 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pagination, sort_header %}
+
+{% block title %}Analytical dataset builder &middot; epaData{% endblock %}
+{% block breadcrumb %}Analytical Dataset Builder{% endblock %}
+{% block phase_badge %}Phase 2: Data Analysis{% endblock %}
+{% block container_width %}1400px{% endblock %}
+
+{% macro text_input(name, label, placeholder='', datalist=none, width='') %}
+<div class="{{ width or 'col-6 col-md-3 col-xl-2' }}">
+  <label for="f-{{ name }}" class="form-label-sm">{{ label }}</label>
+  <input type="text" class="form-control form-control-sm" id="f-{{ name }}" name="{{ name }}"
+         value="{{ request.args.get(name, '') }}" placeholder="{{ placeholder }}"
+         {% if datalist %}list="dl-{{ datalist }}"{% endif %}>
+</div>
+{% endmacro %}
+
+{# A value, or a dash marked as missing; never a 0 standing in for "unknown". #}
+{% macro value(v, kind='sig') -%}
+{%- if v is none -%}<span class="missing-value" title="Missing: not reported, or undefined (e.g. zero gross load)">&mdash;</span>
+{%- elif kind == 'pct' -%}{{ '+' if v > 0 }}{{ v | num(1) }}%
+{%- elif kind == 'share' -%}{{ (v * 100) | num(0) }}%
+{%- elif kind == 'int' -%}{{ v | num }}
+{%- else -%}{{ v | sig }}{%- endif -%}
+{%- endmacro %}
+
+{% block content %}
+{% set is_facility = analysis.level == 'facility' %}
+{% set current_sort = analysis.sort or 'reporting_year' %}
+<h1 class="h4 mb-1">Analytical dataset builder</h1>
+<p class="page-intro mb-3">
+  Choose the records for an analysis, then check what they contain: how many
+  records, facilities, units and years, which variables are available, and how
+  many values are missing. Values CAMPD left blank, and indicators that would
+  divide by zero, stay missing (shown as &mdash;); they are never counted as 0.
+  Every selection is part of the page address, so it can be bookmarked, shared
+  or saved as a configuration file.
+</p>
+
+<form method="get" action="{{ url_for('analysis.builder') }}" class="panel mb-3" id="builder-form">
+  <div class="panel-title">Select records</div>
+  <div class="row g-2">
+    {% for name, label, placeholder in [('year_min', 'From year', 'first'), ('year_max', 'To year', 'last')] %}
+    <div class="col-6 col-md-2 col-xl-1">
+      <label class="form-label-sm" for="f-{{ name }}">{{ label }}</label>
+      <select class="form-select form-select-sm" id="f-{{ name }}" name="{{ name }}">
+        <option value="">{{ placeholder }}</option>
+        {% for y in choices.years | sort %}<option value="{{ y }}"{{ ' selected' if request.args.get(name) == y | string }}>{{ y }}</option>{% endfor %}
+      </select>
+    </div>
+    {% endfor %}
+    {{ text_input('state', 'State', 'KY or KY,WV', 'states') }}
+    {{ text_input('facility_id', 'Facility ID', '6002 or 3,6002') }}
+    {{ text_input('facility_name', 'Facility name', 'contains…') }}
+    {{ text_input('unit_id', 'Unit ID', 'e.g. 1 or CT1') }}
+    {{ text_input('primary_fuel', 'Primary fuel', 'e.g. coal', 'primary_fuels') }}
+    {{ text_input('unit_type', 'Unit type', 'contains…', 'unit_types') }}
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label-sm" for="f-op_time_min">Min. operating time (h)</label>
+      <input type="number" min="0" class="form-control form-control-sm" id="f-op_time_min" name="op_time_min"
+             value="{{ request.args.get('op_time_min', '') }}" placeholder="e.g. 1000">
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label-sm" for="f-gross_load_min">Min. gross load (MWh)</label>
+      <input type="number" min="0" class="form-control form-control-sm" id="f-gross_load_min" name="gross_load_min"
+             value="{{ request.args.get('gross_load_min', '') }}" placeholder="e.g. 100000">
+    </div>
+  </div>
+
+  <details class="mt-3"{{ ' open' if controls_open }}>
+    <summary class="small fw-semibold text-body-secondary">Control technology and emissions programs</summary>
+    <div class="row g-2 mt-1">
+      {{ text_input('so2_control', 'SO₂ control', 'contains, none, any, not …', 'so2_controls') }}
+      {{ text_input('nox_control', 'NOx control', 'contains, none, any, not …', 'nox_controls') }}
+      {{ text_input('pm_control', 'PM control', 'contains, none, any, not …', 'pm_controls') }}
+      {{ text_input('hg_control', 'Hg control', 'contains, none, any, not …', 'hg_controls') }}
+      {{ text_input('program', 'Program code', 'e.g. ARP', 'programs') }}
+    </div>
+  </details>
+
+  <div class="row g-2 mt-2 align-items-end">
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label-sm" for="f-level">One row per</label>
+      <select class="form-select form-select-sm" id="f-level" name="level">
+        <option value="unit"{{ ' selected' if not is_facility }}>Unit-year</option>
+        <option value="facility"{{ ' selected' if is_facility }}>Facility-year (totals)</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label-sm" for="f-yoy">Year-over-year change of</label>
+      <select class="form-select form-select-sm" id="f-yoy" name="yoy">
+        <option value="">(none)</option>
+        {% for name, var in numeric.items() %}
+        <option value="{{ name }}"{{ ' selected' if analysis.yoy and analysis.yoy[0] == name }}>{{ var.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto d-flex gap-2">
+      <button type="submit" class="btn btn-sm btn-primary px-3">Build dataset</button>
+      <a href="{{ url_for('analysis.builder') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+    </div>
+  </div>
+  <p class="small text-body-secondary mt-2 mb-0">
+    Text filters match any part of the value, ignoring case. For controls, <code>none</code> finds
+    units without one, <code>any</code> units with one, and <code>not baghouse</code> excludes one.
+    Minimums apply to each unit-year.
+  </p>
+  {% for key in ('sort', 'order') if request.args.get(key) %}
+  <input type="hidden" name="{{ key }}" value="{{ request.args.get(key) }}">
+  {% endfor %}
+
+  {% for name, values in choices.items() if name != 'years' %}
+  <datalist id="dl-{{ name }}">{% for v in values %}<option value="{{ v }}">{% endfor %}</datalist>
+  {% endfor %}
+</form>
+
+{% if analysis.errors %}
+<div class="alert alert-warning py-2">
+  {% for message in analysis.errors %}<div class="small">{{ message }}</div>{% endfor %}
+</div>
+{% endif %}
+
+<div class="row row-cols-2 row-cols-md-5 g-3 mb-3">
+  <div class="col"><div class="stat-panel"><div class="stat-label">Records</div><div class="stat-value">{{ counts.records | num }}</div><div class="stat-sub">unit-years</div></div></div>
+  <div class="col"><div class="stat-panel"><div class="stat-label">Facilities</div><div class="stat-value">{{ counts.facilities | num }}</div></div></div>
+  <div class="col"><div class="stat-panel"><div class="stat-label">Units</div><div class="stat-value">{{ counts.units | num }}</div></div></div>
+  <div class="col"><div class="stat-panel"><div class="stat-label">States</div><div class="stat-value">{{ counts.states | num }}</div></div></div>
+  <div class="col">
+    <div class="stat-panel">
+      <div class="stat-label">Years</div>
+      <div class="stat-value">{{ counts.years | length }}</div>
+      <div class="stat-sub">{% if counts.years %}{{ counts.years | join(', ') }}{% else %}none{% endif %}</div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 align-items-stretch mb-4">
+  <div class="col-lg-7">
+    <pre class="query-text h-100 mb-0" aria-label="The records selected">{{ analysis.search.describe_filters() }}
+ONE ROW PER {{ 'facility, year (unit values added up)' if is_facility else 'unit, year' }}{% if analysis.yoy %}
+CHANGE FROM PREVIOUS YEAR OF {{ analysis.yoy | join(', ') }}{% endif %}</pre>
+  </div>
+  <div class="col-lg-5">
+    <div class="panel h-100">
+      <div class="panel-title">Use this dataset</div>
+      <div class="d-flex flex-wrap gap-1">
+        <button type="button" class="btn btn-sm btn-outline-secondary" id="copy-link">Copy link</button>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('analysis.download', page=none, format='csv') }}">Download CSV</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('analysis.download', page=none, format='xlsx') }}">Excel (with definitions)</a>
+      </div>
+      <div class="d-flex flex-wrap gap-1 mt-1">
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('analysis.configuration', page=none) }}">Save configuration</a>
+        <label class="btn btn-sm btn-outline-secondary mb-0" for="load-config">Load configuration</label>
+        <input type="file" id="load-config" accept=".json,application/json" class="visually-hidden">
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('main.explorer', page=none, yoy=none, sort=none, order=none) }}">Open in Data Explorer</a>
+        <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('api.analysis_indicators', page=none) }}">JSON</a>
+      </div>
+      <p class="small text-body-secondary mb-0 mt-2" id="config-status" aria-live="polite">
+        A configuration file stores these filters with the counts and indicator definitions; loading it rebuilds the same dataset.
+      </p>
+    </div>
+  </div>
+</div>
+
+<h2 class="h5 mb-1">Variables and missing values</h2>
+<p class="small text-body-secondary mb-2">
+  For the {{ total | num }} {{ 'facility-year' if is_facility else 'unit-year' }} row(s) selected.
+  {% if is_facility %}Facility totals add up the units that reported a value; indicators use only units that reported both inputs.{% endif %}
+</p>
+<div class="table-wrap mb-3">
+  <table class="table table-sm table-data mb-0" id="variables-table">
+    <thead>
+      <tr>
+        <th scope="col">Variable</th>
+        <th scope="col">Type</th>
+        <th scope="col">Unit</th>
+        <th scope="col">Definition</th>
+        <th scope="col" class="num">Present</th>
+        <th scope="col" class="num">Missing</th>
+        <th scope="col" style="width: 12rem">Missing share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for var, m in measured + derived %}
+      <tr>
+        <td><span class="fw-semibold">{{ var.label }}</span><br><code class="small">{{ var.name }}</code></td>
+        <td><span class="kind-badge kind-{{ var.kind }}">{{ var.kind }}</span></td>
+        <td class="small text-nowrap">{{ var.unit }}</td>
+        <td class="small">{{ var.definition }}</td>
+        <td class="num">{{ m.count | num }}</td>
+        <td class="num">{{ m.missing | num }}</td>
+        <td>
+          {% if m.missing_pct is not none %}
+          <div class="d-flex align-items-center gap-2">
+            <div class="missing-bar flex-grow-1" role="presentation"><span style="width: {{ m.missing_pct }}%"></span></div>
+            <span class="small text-nowrap">{{ m.missing_pct }}%</span>
+          </div>
+          {% if m.zero_denominator %}<div class="small text-body-secondary">{{ m.zero_denominator | num }} with a zero denominator</div>{% endif %}
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="table-wrap mb-4">
+  <table class="table table-sm table-data mb-0" id="categories-table">
+    <thead>
+      <tr>
+        <th scope="col">Category</th>
+        <th scope="col"><code class="small">name</code></th>
+        <th scope="col" class="num">Distinct values</th>
+        <th scope="col" class="num">Blank</th>
+        <th scope="col" class="num">Blank share</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in categorical %}
+      <tr>
+        <td class="fw-semibold">{{ c.label }}</td>
+        <td><code class="small">{{ c.variable }}</code></td>
+        <td class="num">{{ c.distinct | num }}</td>
+        <td class="num">{{ c.missing | num }}</td>
+        <td class="num">{% if c.missing_pct is not none %}{{ c.missing_pct }}%{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<h2 class="h5 mb-1">Preview with derived indicators</h2>
+<p class="small text-body-secondary mb-2">Click a column heading to sort; missing values sort last.</p>
+<div class="table-wrap">
+  <table class="table table-sm table-hover table-data wrap-head mb-0" id="preview-table">
+    <thead>
+      <tr>
+        {{ sort_header('Facility', 'facility_name', current_sort, analysis.order) }}
+        {{ sort_header('State', 'state_code', current_sort, analysis.order) }}
+        {% if is_facility %}
+          {{ sort_header('Year', 'reporting_year', current_sort, analysis.order) }}
+          {{ sort_header('Units', 'unit_count', current_sort, analysis.order, num=true) }}
+          {{ sort_header('With gaps', 'units_with_missing_values', current_sort, analysis.order, num=true) }}
+        {% else %}
+          {{ sort_header('Unit', 'epa_unit_id', current_sort, analysis.order) }}
+          {{ sort_header('Year', 'reporting_year', current_sort, analysis.order) }}
+          {{ sort_header('Fuel', 'primary_fuel', current_sort, analysis.order) }}
+        {% endif %}
+        {{ sort_header('Gross load (MWh)', 'gross_load', current_sort, analysis.order, num=true) }}
+        {{ sort_header('CO₂ (tons)', 'co2_mass', current_sort, analysis.order, num=true) }}
+        {{ sort_header('CO₂ intensity (t/MWh)', 'co2_intensity', current_sort, analysis.order, num=true) }}
+        {{ sort_header('SO₂ intensity (t/MWh)', 'so2_intensity', current_sort, analysis.order, num=true) }}
+        {{ sort_header('NOx intensity (t/MWh)', 'nox_intensity', current_sort, analysis.order, num=true) }}
+        {{ sort_header('Heat rate (MMBtu/MWh)', 'heat_rate', current_sort, analysis.order, num=true) }}
+        {% if not is_facility %}{{ sort_header('Utilization', 'operating_utilization', current_sort, analysis.order, num=true) }}{% endif %}
+        {% for name in analysis.yoy %}
+          {{ sort_header(numeric[name].label ~ ' change (' ~ numeric[name].unit ~ ')', name ~ '_change', current_sort, analysis.order, num=true) }}
+          {{ sort_header('% change', name ~ '_pct_change', current_sort, analysis.order, num=true) }}
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        <td><a href="{{ url_for('main.facility_detail', facility_id=row.facility_id) }}">{{ row.facility_name }}</a></td>
+        <td>{{ row.state_code }}</td>
+        {% if is_facility %}
+          <td>{{ row.reporting_year }}</td>
+          <td class="num">{{ row.unit_count }}</td>
+          <td class="num">{{ row.units_with_missing_values }}</td>
+        {% else %}
+          <td><a href="{{ url_for('main.unit_detail', unit_key=row.unit_key) }}">{{ row.epa_unit_id }}</a></td>
+          <td>{{ row.reporting_year }}</td>
+          <td class="small">{{ row.primary_fuel }}</td>
+        {% endif %}
+        <td class="num">{{ value(row.gross_load, 'int') }}</td>
+        <td class="num">{{ value(row.co2_mass, 'int') }}</td>
+        <td class="num">{{ value(row.co2_intensity) }}</td>
+        <td class="num">{{ value(row.so2_intensity) }}</td>
+        <td class="num">{{ value(row.nox_intensity) }}</td>
+        <td class="num">{{ value(row.heat_rate) }}</td>
+        {% if not is_facility %}<td class="num">{{ value(row.operating_utilization, 'share') }}</td>{% endif %}
+        {% for name in analysis.yoy %}
+          <td class="num">{{ value(row[name ~ '_change']) }}</td>
+          <td class="num">{{ value(row[name ~ '_pct_change'], 'pct') }}</td>
+        {% endfor %}
+      </tr>
+      {% else %}
+      <tr><td colspan="16" class="text-center text-body-secondary py-4">No records match these filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<div class="d-flex flex-wrap justify-content-end align-items-center gap-3 mt-2 mb-4">
+  <span class="small text-body-secondary">
+    {% if total %}Rows {{ first_index | num }}&ndash;{{ last_index | num }} of {{ total | num }}{% endif %}
+  </span>
+  {{ pagination(page, total_pages) }}
+</div>
+
+<h2 class="h5 mb-1">Impact factors{% if factors %} &middot; EPA TRACI {{ factors[0].version }}{% endif %}</h2>
+<p class="small text-body-secondary mb-2">
+  The TRACI characterization factors stored for CAMPD's pollutants, emitted to air. A potential
+  impact is the emission in kilograms (1 short ton = 907.18474 kg) times its factor, added up
+  only within one impact category. These are potential impacts for comparison, not measured harm.
+</p>
+{% if factors %}
+<div class="table-wrap">
+  <table class="table table-sm table-data mb-0" id="traci-table">
+    <thead>
+      <tr>
+        <th scope="col">CAMPD pollutant</th>
+        <th scope="col">TRACI substance</th>
+        <th scope="col">Impact category</th>
+        <th scope="col" class="num">Factor</th>
+        <th scope="col">Unit</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in factors %}
+      <tr>
+        <td><code class="small">{{ f.campd_metric }}</code></td>
+        <td>{{ f.pollutant_name }}{% if f.cas_number %} <span class="small text-body-secondary">(CAS {{ f.cas_number }})</span>{% endif %}</td>
+        <td>{{ category_labels.get(f.impact_category, f.impact_category) }} <span class="small text-body-secondary">({{ f.impact_category }})</span></td>
+        <td class="num">{{ f.factor_value | sig(4, trim=true) }}</td>
+        <td class="small">{{ f.factor_unit }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="alert alert-secondary small">No TRACI factors are stored. Run <code>flask db upgrade</code>, or <code>flask traci load traci_2_2.xlsx</code>.</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/analysis.js') }}"></script>
+{% endblock %}
