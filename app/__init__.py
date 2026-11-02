@@ -123,7 +123,7 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     # `flask db migrate` can see every table.
     from app import models  # noqa: F401
 
-    from app.routes.api import api_bp
+    from app.routes.api import ai_bp, api_bp
     from app.routes.download import download_bp
     from app.routes.main import main_bp
     from app.routes.retrieval import retrieval_bp
@@ -136,6 +136,7 @@ def create_app(config_overrides: dict | None = None) -> Flask:
     app.register_blueprint(download_bp)
     app.register_blueprint(settings_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(ai_bp)
 
     from app.cli import register_cli
     from app.templating import register_template_helpers
