@@ -1,0 +1,209 @@
+{# Right-side AI assistant drawer. Include it once from base.html. #}
+<style>
+  .ai-tab {
+    position: fixed; right: 0; top: 50%; transform: translateY(-50%);
+    z-index: 1040; border: 0; cursor: pointer;
+    background: var(--bs-primary, #0d6efd); color: #fff;
+    padding: 14px 9px; writing-mode: vertical-rl;
+    border-radius: 10px 0 0 10px; font-weight: 600; letter-spacing: .03em;
+    box-shadow: -2px 2px 10px rgba(0, 0, 0, .18);
+  }
+  .ai-tab:hover { filter: brightness(1.08); }
+
+  .ai-drawer {
+    position: fixed; top: 0; right: 0; height: 100vh;
+    width: min(400px, 100vw); z-index: 1050;
+    display: flex; flex-direction: column;
+    background: var(--bs-body-bg, #fff); color: var(--bs-body-color, #212529);
+    border-left: 1px solid var(--bs-border-color, #dee2e6);
+    box-shadow: -6px 0 24px rgba(0, 0, 0, .15);
+    transform: translateX(105%); transition: transform .25s ease;
+  }
+  .ai-drawer.open { transform: translateX(0); }
+
+  .ai-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 14px; border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+  }
+  .ai-head .ai-title { font-weight: 600; }
+  .ai-head button {
+    border: 0; background: transparent; color: inherit; opacity: .7;
+    font-size: .85rem; padding: 4px 8px; border-radius: 6px; cursor: pointer;
+  }
+  .ai-head button:hover { opacity: 1; background: var(--bs-tertiary-bg, #f1f3f5); }
+
+  .ai-body { flex: 1; overflow-y: auto; padding: 14px; }
+  .ai-msg { margin-bottom: 12px; display: flex; }
+  .ai-msg.user { justify-content: flex-end; }
+  .ai-bubble {
+    max-width: 88%; padding: 9px 12px; border-radius: 14px;
+    font-size: .9rem; line-height: 1.45; word-wrap: break-word;
+  }
+  .ai-msg.user .ai-bubble { background: var(--bs-primary, #0d6efd); color: #fff; border-bottom-right-radius: 4px; }
+  .ai-msg.model .ai-bubble { background: var(--bs-tertiary-bg, #f1f3f5); border-bottom-left-radius: 4px; }
+  .ai-msg.error .ai-bubble { background: #f8d7da; color: #842029; }
+  .ai-bubble p { margin: 0 0 .5rem; }
+  .ai-bubble p:last-child, .ai-bubble ul:last-child { margin-bottom: 0; }
+  .ai-bubble ul { margin: 0 0 .5rem; padding-left: 1.2rem; }
+
+  .ai-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .ai-chip {
+    border: 1px solid var(--bs-border-color, #dee2e6); background: transparent; color: inherit;
+    border-radius: 999px; padding: 4px 10px; font-size: .78rem; cursor: pointer; text-align: left;
+  }
+  .ai-chip:hover { background: var(--bs-tertiary-bg, #f1f3f5); }
+
+  .ai-typing span {
+    display: inline-block; width: 6px; height: 6px; margin: 0 2px; border-radius: 50%;
+    background: currentColor; opacity: .35; animation: aiDot 1s infinite ease-in-out;
+  }
+  .ai-typing span:nth-child(2) { animation-delay: .15s; }
+  .ai-typing span:nth-child(3) { animation-delay: .3s; }
+  @keyframes aiDot { 0%, 80%, 100% { opacity: .25; } 40% { opacity: .9; } }
+
+  .ai-foot { padding: 10px 12px; border-top: 1px solid var(--bs-border-color, #dee2e6); }
+  .ai-note { font-size: .7rem; opacity: .6; margin-top: 6px; }
+</style>
+
+<button type="button" class="ai-tab" id="aiTab" aria-controls="aiDrawer" aria-expanded="false">🤖 Ask AI</button>
+
+<aside class="ai-drawer" id="aiDrawer" aria-label="EPA natural language assistant" aria-hidden="true">
+  <div class="ai-head">
+    <span class="ai-title">🤖 EPA Assistant</span>
+    <span>
+      <button type="button" id="aiClear" title="Start a new conversation">New chat</button>
+      <button type="button" id="aiClose" aria-label="Close assistant">✕</button>
+    </span>
+  </div>
+
+  <div class="ai-body" id="aiBody">
+    <div class="ai-msg model">
+      <div class="ai-bubble">
+        <p>Ask about the emissions data in plain English. I can look up facilities, explain what the numbers mean, show simple stats, and compare years.</p>
+        <div class="ai-chips" id="aiChips">
+          <button type="button" class="ai-chip">Top 10 CO₂ emitters in Kentucky in 2022</button>
+          <button type="button" class="ai-chip">Compare Kentucky CO₂ in 2021 vs 2022</button>
+          <button type="button" class="ai-chip">Which state had the highest CO₂ in 2023?</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="ai-foot">
+    <div class="input-group input-group-sm">
+      <input type="text" class="form-control" id="aiInput" placeholder="Ask a question…" autocomplete="off">
+      <button class="btn btn-primary" type="button" id="aiSend">Send</button>
+    </div>
+    <div class="ai-note">AI answers can contain mistakes. Check important numbers in the Data explorer.</div>
+  </div>
+</aside>
+
+{% raw %}
+<script>
+(function () {
+  var tab = document.getElementById("aiTab");
+  var drawer = document.getElementById("aiDrawer");
+  var body = document.getElementById("aiBody");
+  var input = document.getElementById("aiInput");
+  var sendBtn = document.getElementById("aiSend");
+  var history = [];
+  var busy = false;
+
+  function setOpen(open) {
+    drawer.classList.toggle("open", open);
+    drawer.setAttribute("aria-hidden", open ? "false" : "true");
+    tab.setAttribute("aria-expanded", open ? "true" : "false");
+    tab.style.display = open ? "none" : "";
+    if (open) { setTimeout(function () { input.focus(); }, 260); }
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  }
+  function inline(s) { return s.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>"); }
+
+  // Minimal, safe formatting: paragraphs, bullet lists and **bold**.
+  function format(text) {
+    var lines = escapeHtml(text).split("\n");
+    var html = "";
+    var inList = false;
+    lines.forEach(function (line) {
+      var m = line.match(/^\s*[*-]\s+(.*)$/);
+      if (m) {
+        if (!inList) { html += "<ul>"; inList = true; }
+        html += "<li>" + inline(m[1]) + "</li>";
+      } else {
+        if (inList) { html += "</ul>"; inList = false; }
+        if (line.trim()) { html += "<p>" + inline(line) + "</p>"; }
+      }
+    });
+    if (inList) { html += "</ul>"; }
+    return html;
+  }
+
+  function addMessage(role, text, asHtml) {
+    var wrap = document.createElement("div");
+    wrap.className = "ai-msg " + role;
+    var bubble = document.createElement("div");
+    bubble.className = "ai-bubble";
+    if (asHtml) { bubble.innerHTML = text; } else if (role === "model") { bubble.innerHTML = format(text); } else { bubble.textContent = text; }
+    wrap.appendChild(bubble);
+    body.appendChild(wrap);
+    body.scrollTop = body.scrollHeight;
+    return wrap;
+  }
+
+  async function ask(question) {
+    var q = (question || "").trim();
+    if (!q || busy) { return; }
+    busy = true;
+    sendBtn.disabled = true;
+    input.value = "";
+    addMessage("user", q);
+    var typing = addMessage("model", '<span class="ai-typing"><span></span><span></span><span></span></span>', true);
+
+    try {
+      var res = await fetch("/api/ai/query", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: q, history: history })
+      });
+      var data = {};
+      try { data = await res.json(); } catch (e) { data = { error: "Unexpected response from the server (" + res.status + ")." }; }
+      typing.remove();
+      if (data.error) {
+        addMessage("error", data.error);
+      } else {
+        var answer = data.response || "No response generated.";
+        history.push({ role: "user", text: q }, { role: "model", text: answer });
+        addMessage("model", answer);
+      }
+    } catch (err) {
+      typing.remove();
+      addMessage("error", "Could not reach the server: " + err.message);
+    } finally {
+      busy = false;
+      sendBtn.disabled = false;
+      input.focus();
+    }
+  }
+
+  tab.addEventListener("click", function () { setOpen(true); });
+  document.getElementById("aiClose").addEventListener("click", function () { setOpen(false); });
+  document.getElementById("aiClear").addEventListener("click", function () {
+    history = [];
+    var first = body.firstElementChild;
+    body.innerHTML = "";
+    if (first) { body.appendChild(first); }
+  });
+  sendBtn.addEventListener("click", function () { ask(input.value); });
+  input.addEventListener("keydown", function (e) { if (e.key === "Enter") { ask(input.value); } });
+  document.getElementById("aiChips").addEventListener("click", function (e) {
+    if (e.target.classList.contains("ai-chip")) { ask(e.target.textContent); }
+  });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && drawer.classList.contains("open")) { setOpen(false); }
+  });
+})();
+</script>
+{% endraw %}
