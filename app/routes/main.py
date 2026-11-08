@@ -8,6 +8,7 @@ from typing import Any
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from sqlalchemy import delete, func, select
 
+
 from app import db
 from app.models import (
     AnnualRecord,
@@ -45,6 +46,62 @@ def _int_list(name: str) -> list[int]:
             if part.isdigit() and int(part) not in values:
                 values.append(int(part))
     return values
+def _coverage_stats() -> dict[str, Any]:
+    year_min, year_max = db.session.execute(
+        select(func.min(AnnualRecord.reporting_year), func.max(AnnualRecord.reporting_year))
+    ).one()
+    return {
+        "facility_count": db.session.scalar(select(func.count(Facility.epa_facility_id))) or 0,
+        "unit_count": db.session.scalar(select(func.count(Unit.internal_unit_key))) or 0,
+        "record_count": db.session.scalar(select(func.count(AnnualRecord.id))) or 0,
+        "state_count": db.session.scalar(
+            select(func.count(func.distinct(Facility.state_code))).where(Facility.state_code != "")
+        ) or 0,
+        "year_min": year_min,
+        "year_max": year_max,
+    }
+
+
+@main_bp.route("/data-sources")
+def data_sources():
+    """Where the data comes from: CAMPD summary plus every imported dataset."""
+    datasets = db.session.scalars(
+        select(Dataset).order_by(Dataset.retrieval_date.desc())
+    ).all()
+    source_counts = dict(
+        db.session.execute(
+            select(DataProvenance.source_type, func.count(DataProvenance.id)).group_by(
+                DataProvenance.source_type
+            )
+        ).all()
+    )
+    return render_template("data_sources.html", datasets=datasets, source_counts=source_counts)
+
+
+@main_bp.route("/coverage")
+def coverage():
+    """Coverage dashboard: totals plus records by year and facilities by state."""
+    by_year = [
+        {"year": year, "count": count}
+        for year, count in db.session.execute(
+            select(AnnualRecord.reporting_year, func.count(AnnualRecord.id))
+            .group_by(AnnualRecord.reporting_year)
+            .order_by(AnnualRecord.reporting_year)
+        ).all()
+    ]
+    by_state = [
+        {"state": state, "count": count}
+        for state, count in db.session.execute(
+            select(Facility.state_code, func.count(Facility.epa_facility_id))
+            .where(Facility.state_code != "")
+            .group_by(Facility.state_code)
+            .order_by(func.count(Facility.epa_facility_id).desc())
+            .limit(10)
+        ).all()
+    ]
+    return render_template(
+        "coverage.html", stats=_coverage_stats(), by_year=by_year, by_state=by_state
+    )
 
 
 @main_bp.route("/")
