@@ -15,6 +15,9 @@ python-dotenv>=1.0
 pandas>=2.2
 openpyxl>=3.1
 
+# Statistics (confidence intervals, skewness, Kruskal-Wallis test)
+scipy>=1.13
+
 # AI assistant panel (Google Gemini); the app also runs without it
 google-genai>=2.34
 

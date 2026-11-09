@@ -33,7 +33,28 @@ from app.services.analysis import (
 from app.services.assistant import MAX_PROMPT_LENGTH, AssistantError, ask
 from app.services.describe import MAX_LENGTH, interpret
 from app.services.search import parse_search, run_search
-from app.services.traci import CATEGORY_LABELS, factors_for
+from app.services.impacts import (
+    DISCLAIMER,
+    SHORT_TON_KG,
+    grouped_impacts,
+    impact_summary,
+    parse_impact_options,
+    sorted_groups,
+    worked_example,
+)
+from app.services.statistics import (
+    STATISTICS,
+    all_variables,
+    compare_groups,
+    describe,
+    describe_grouped,
+    level_frame,
+    load_selection,
+    parse_compare_options,
+    parse_statistics_options,
+    shown_groups,
+)
+from app.services.traci import CATEGORY_LABELS, factors_for, versions
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 ai_bp = Blueprint("ai", __name__, url_prefix="/api/ai")
@@ -355,6 +376,141 @@ def traci_factors():
             ],
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2, week 2: statistics, comparisons and TRACI impacts
+# ---------------------------------------------------------------------------
+
+
+def _week2_selection(version=None):
+    """The analysis, its unit-years with indicators and impacts, or an error."""
+    analysis, error = _analysis_or_error()
+    if error:
+        return None, None, None, error
+    try:
+        units, cats = load_selection(analysis, version)
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        current_app.logger.exception("analysis query failed")
+        return None, None, None, (jsonify({"error": "Database query failed", "detail": str(exc)}), 500)
+    return analysis, units, cats, None
+
+
+def _options_error(errors):
+    return jsonify({"error": "Invalid parameters", "detail": errors}), 400
+
+
+@api_bp.route("/analysis/statistics", methods=["GET"])
+def analysis_statistics():
+    """Descriptive statistics of numeric variables, optionally grouped.
+
+    Takes every data-explorer filter plus ``level`` ("unit" or "facility"),
+    ``variables`` (comma-separated; default all, including TRACI impacts) and
+    ``group_by`` (year, state, primary_fuel, unit_type; year or state at the
+    facility level). Statistics use present values only; missing are counted.
+    """
+    analysis, units, cats, error = _week2_selection()
+    if error:
+        return error
+    variables = all_variables(analysis.level, cats)
+    options = parse_statistics_options(request.args, analysis.level, variables)
+    if options["errors"]:
+        return _options_error(options["errors"])
+    frame = level_frame(units, analysis.level, cats)
+    chosen = options["variables"]
+    body = {
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "level": analysis.level,
+        "parameters": request.args.to_dict(flat=False),
+        "selection": dataset_counts(units),
+        "rows": int(len(frame)),
+        "group_by": options["group"],
+        "statistics_defined": {k: {"label": label, "meaning": text}
+                               for k, (label, text) in STATISTICS.items()},
+        "method": {
+            "std": "sample standard deviation (n - 1)",
+            "percentiles": "linear interpolation (numpy/pandas 'linear', Excel PERCENTILE.INC)",
+            "ci95": "mean ± t(0.975, n-1) × std / sqrt(n)",
+            "outliers": "outside Q1 - 1.5 IQR .. Q3 + 1.5 IQR",
+            "missing": "missing values are excluded and counted, never treated as 0",
+        },
+        "traci_version": cats[0].version if cats else None,
+    }
+    if options["group"]:
+        body["definitions"] = {name: var.as_dict() for name, var in chosen.items()}
+        body["groups"] = describe_grouped(frame, chosen, options["group"])
+    else:
+        body["variables"] = describe(frame, chosen)
+    return jsonify(body)
+
+
+@api_bp.route("/analysis/compare", methods=["GET"])
+def analysis_compare():
+    """Compare groups on one variable, with ranks and differences.
+
+    Takes every data-explorer filter plus ``by`` (state, primary_fuel,
+    facility, unit_type, year), ``metric`` (any numeric variable or TRACI
+    impact), ``baseline`` (a group to compare with; default the average group
+    for totals, all records combined for rates), ``order`` and ``limit``
+    (10, 25, 50, 100 or all). Includes a Kruskal-Wallis H test.
+    """
+    analysis, units, cats, error = _week2_selection()
+    if error:
+        return error
+    variables = all_variables("unit", cats)
+    options = parse_compare_options(request.args, variables)
+    if options["errors"]:
+        return _options_error(options["errors"])
+    result = compare_groups(units, variables[options["metric"]], options["by"], options["baseline"])
+    result["groups"] = shown_groups(result["groups"], options["order"], options["limit"])
+    return jsonify({
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "parameters": request.args.to_dict(flat=False),
+        "selection": dataset_counts(units),
+        "order": options["order"],
+        "limit": options["limit"],
+        **result,
+    })
+
+
+@api_bp.route("/traci/impacts", methods=["GET"])
+def traci_impacts():
+    """Potential impacts of the selected emissions by TRACI category.
+
+    Takes every data-explorer filter plus ``version`` (TRACI version; default
+    latest), ``group_by`` (state, primary_fuel, unit_type, year, facility),
+    ``metric`` (the impact or ``<impact>_per_mwh`` to rank groups by) and
+    ``limit``. Masses are converted with 1 short ton = 907.18474 kg and
+    impact_c = sum(mass_kg x CF); each category keeps its own unit.
+    """
+    version = (request.args.get("version") or "").strip() or None
+    if version and version not in versions():
+        return jsonify({"error": "Unknown TRACI version", "detail": f"version {version} is not stored"}), 404
+    analysis, units, cats, error = _week2_selection(version)
+    if error:
+        return error
+    if not cats:
+        return jsonify({"error": "No TRACI factors stored", "detail": "run flask db upgrade"}), 404
+    options = parse_impact_options(request.args, cats)
+    if options["errors"]:
+        return _options_error(options["errors"])
+    groups = grouped_impacts(units, cats, options["group"]) if len(units) else []
+    return jsonify({
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "parameters": request.args.to_dict(flat=False),
+        "selection": dataset_counts(units),
+        "traci_version": cats[0].version,
+        "short_ton_kg": SHORT_TON_KG,
+        "formula": "impact_c = sum_i(mass_short_tons_i x 907.18474 x CF_i,c)",
+        "note": DISCLAIMER,
+        "categories": impact_summary(units, cats),
+        "group_by": options["group"],
+        "ranked_by": options["metric"],
+        "group_count": len(groups),
+        "groups": sorted_groups(groups, options["metric"], options["limit"]),
+        "worked_example": worked_example(units, cats),
+    })
 
 
 # ---------------------------------------------------------------------------

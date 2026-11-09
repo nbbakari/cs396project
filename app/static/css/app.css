@@ -405,3 +405,32 @@ dl.facts dd { margin: 0; }
   line-height: 1.2;
   margin-top: 0.1rem;
 }
+
+/* --- Phase 2, week 2: statistics, comparison, TRACI impacts --- */
+.analysis-tabs .nav-link { font-size: 0.9rem; color: #475569; }
+.analysis-tabs .nav-link.active { color: #0f172a; font-weight: 600; }
+.kind-badge.kind-impact { background: #fef3c7; color: #92400e; }
+.stats-table .more-stat { display: none; }
+.stats-table.show-more .more-stat { display: table-cell; }
+.table-data tr.table-section th {
+  background: #f8fafc; color: #475569; font-size: 0.75rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.03em; padding-top: 0.6rem;
+}
+.table-data tr.is-reference td, .table-data tr.is-reference th { background: #f0fdfa; }
+.small-sample { color: #b45309; font-size: 0.75rem; }
+.test-panel { border-left: 4px solid #14b8a6; }
+.test-panel.not-significant { border-left-color: #94a3b8; }
+.impact-card { height: 100%; }
+.impact-card .impact-total { font-size: 1.45rem; font-weight: 700; color: #0f172a; line-height: 1.2; }
+.impact-card .impact-unit { font-size: 0.8rem; color: #475569; }
+.share-bar { display: flex; height: 0.55rem; border-radius: 999px; overflow: hidden; background: #e2e8f0; }
+.share-bar span { display: block; height: 100%; }
+.share-bar span + span { border-left: 2px solid #fff; }
+.share-key { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 2px; margin-right: 0.25rem; vertical-align: baseline; }
+.pollutant-co2_mass { background: #2a78d6; }
+.pollutant-so2_mass { background: #eb6834; }
+.pollutant-nox_mass { background: #1baf7a; }
+.formula { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.85rem; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 0.5rem 0.75rem; }
+.method-steps { counter-reset: step; list-style: none; padding-left: 0; }
+.method-steps li { counter-increment: step; position: relative; padding-left: 2rem; margin-bottom: 0.6rem; }
+.method-steps li::before { content: counter(step); position: absolute; left: 0; top: 0; width: 1.4rem; height: 1.4rem; border-radius: 50%; background: #ccfbf1; color: #115e59; font-size: 0.75rem; font-weight: 700; display: flex; align-items: center; justify-content: center; }

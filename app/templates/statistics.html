@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% from "_macros.html" import val, variable_cell %}
+
+{% block title %}Descriptive statistics &middot; epaData{% endblock %}
+{% block breadcrumb %}Descriptive Statistics{% endblock %}
+{% block phase_badge %}Phase 2: Data Analysis{% endblock %}
+{% block container_width %}1400px{% endblock %}
+
+{% block content %}
+{% set is_facility = analysis.level == 'facility' %}
+{% set row_word = 'facility-year' if is_facility else 'unit-year' %}
+<h1 class="h4 mb-1">Descriptive statistics</h1>
+<p class="page-intro mb-3">
+  What the selected records look like, variable by variable: how many values there are,
+  the average and the middle value, how spread out they are, and the extremes. Statistics use
+  only the values that were reported. A value CAMPD left blank, or an indicator that would divide
+  by zero, is counted as missing and never as 0.
+</p>
+
+{% include "_analysis_nav.html" %}
+
+<form method="get" action="{{ url_for('analysis.statistics') }}" class="panel mb-3" id="statistics-form">
+  <div class="panel-title">Select records</div>
+  {% include "_analysis_filters.html" %}
+  <div class="row g-2 mt-2 align-items-end">
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label-sm" for="f-level">One row per</label>
+      <select class="form-select form-select-sm" id="f-level" name="level">
+        <option value="unit"{{ ' selected' if not is_facility }}>Unit-year</option>
+        <option value="facility"{{ ' selected' if is_facility }}>Facility-year (totals)</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-3 col-xl-2">
+      <label class="form-label-sm" for="f-group_by">Group by</label>
+      <select class="form-select form-select-sm" id="f-group_by" name="group_by">
+        <option value="">(not grouped)</option>
+        {% for key, label in options.groups.items() %}
+        <option value="{{ key }}"{{ ' selected' if options.group == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-5 col-xl-4">
+      <label class="form-label-sm" for="f-variable">Variable shown for each group</label>
+      <select class="form-select form-select-sm" id="f-variable" name="variable">
+        {% for name, var in variables.items() %}
+        <option value="{{ name }}"{{ ' selected' if options.variable == name }}>{{ with_meaning(var.label, name, var.unit) }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-auto d-flex gap-2">
+      <button type="submit" class="btn btn-sm btn-primary px-3">Calculate</button>
+      <a href="{{ url_for('analysis.statistics') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+    </div>
+  </div>
+</form>
+
+{% if errors %}
+<div class="alert alert-warning py-2">
+  {% for message in errors %}<div class="small">{{ message }}</div>{% endfor %}
+</div>
+{% endif %}
+
+{% include "_selection_cards.html" %}
+
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+  <h2 class="h5 mb-0 me-auto">All variables <span class="small text-body-secondary fw-normal">over {{ total | num }} {{ row_word }} row(s)</span></h2>
+  <div class="form-check form-switch small mb-0">
+    <input class="form-check-input" type="checkbox" role="switch" id="more-stats" data-toggle-class="show-more" data-target="#stats-table">
+    <label class="form-check-label" for="more-stats">More statistics (percentiles, confidence interval, skewness, outliers)</label>
+  </div>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('analysis.statistics_download', format='csv') }}">CSV</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('analysis.statistics_download', format='xlsx') }}">Excel (with method)</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('api.analysis_statistics') }}">JSON</a>
+</div>
+<div class="table-wrap mb-2">
+  <table class="table table-sm table-data wrap-head mb-0 stats-table" id="stats-table">
+    <thead>
+      <tr>
+        <th scope="col" style="min-width: 15rem">Variable</th>
+        {% for key, (label, text) in statistics.items() %}
+        <th scope="col" class="num{{ ' more-stat' if key not in main_statistics }}" title="{{ text }}">{{ label }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% set ns = namespace(kind='') %}
+      {% for row in rows %}
+      {% if row.kind != ns.kind %}
+      {% set ns.kind = row.kind %}
+      <tr class="table-section"><th scope="rowgroup" colspan="{{ statistics | length + 1 }}">
+        {{ {'measured': 'Measurements reported to EPA', 'derived': 'Derived indicators (calculated from the measurements)', 'impact': 'TRACI potential impacts' ~ (' (version ' ~ traci_version ~ ')' if traci_version else '')}[row.kind] }}
+      </th></tr>
+      {% endif %}
+      <tr>
+        <td>{{ variable_cell(row) }}</td>
+        {% for key in statistics %}
+        {% set v = row.statistics[key] %}
+        <td class="num{{ ' more-stat' if key not in main_statistics }}">
+          {%- if key in ('count', 'missing', 'outliers') -%}{{ v | num }}
+          {%- elif key == 'skewness' -%}{{ val(v, 'sig') }}
+          {%- else -%}{{ val(v) }}{%- endif -%}
+        </td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="small text-body-secondary mb-4">
+  Hover over a column heading for its meaning. Std dev is the sample standard deviation (divided by
+  n&nbsp;&minus;&nbsp;1). Quartiles and percentiles interpolate linearly between values, as Excel's
+  PERCENTILE.INC does. Large values are written in words; hover over one for the exact number.
+</p>
+
+{% if options.group %}
+{% set var = variables[options.variable] %}
+<h2 class="h5 mb-1">{{ var.label }} by {{ options.groups[options.group] | lower }}</h2>
+<p class="small text-body-secondary mb-2">{{ with_meaning(var.label, var.name, var.unit) }}. {{ var.definition }}</p>
+<div class="table-wrap mb-4">
+  <table class="table table-sm table-data wrap-head mb-0 stats-table" id="grouped-table">
+    <thead>
+      <tr>
+        <th scope="col">{{ options.groups[options.group] }}</th>
+        <th scope="col" class="num">Records</th>
+        {% for key, (label, text) in statistics.items() %}
+        <th scope="col" class="num{{ ' more-stat' if key not in main_statistics }}" title="{{ text }}">{{ label }}</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in grouped %}
+      {% set s = g.statistics[options.variable] %}
+      <tr>
+        <td class="fw-semibold">{{ g.group }}</td>
+        <td class="num">{{ g.records | num }}</td>
+        {% for key in statistics %}
+        {% set v = s[key] %}
+        <td class="num{{ ' more-stat' if key not in main_statistics }}">
+          {%- if key in ('count', 'missing', 'outliers') -%}{{ v | num }}
+          {%- elif key == 'skewness' -%}{{ val(v, 'sig') }}
+          {%- else -%}{{ val(v) }}{%- endif -%}
+        </td>
+        {% endfor %}
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ statistics | length + 2 }}" class="text-center text-body-secondary py-4">No records match these filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<details class="panel mb-4">
+  <summary class="panel-title mb-0">What each statistic means</summary>
+  <dl class="row small mb-0 mt-2">
+    {% for key, (label, text) in statistics.items() %}
+    <dt class="col-sm-3 col-lg-2">{{ label }}</dt><dd class="col-sm-9 col-lg-10 mb-1">{{ text[0] | upper }}{{ text[1:] }}.</dd>
+    {% endfor %}
+  </dl>
+</details>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/analysis.js') }}"></script>
+{% endblock %}

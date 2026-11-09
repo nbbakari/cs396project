@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+{% from "_macros.html" import val %}
+
+{% block title %}Compare and rank &middot; epaData{% endblock %}
+{% block breadcrumb %}Compare &amp; Rank{% endblock %}
+{% block phase_badge %}Phase 2: Data Analysis{% endblock %}
+{% block container_width %}1400px{% endblock %}
+
+{% block content %}
+{% set metric = result.metric %}
+{% set is_sum = result.aggregation == 'sum' %}
+{% set ref = result.reference %}
+<h1 class="h4 mb-1">Compare and rank</h1>
+<p class="page-intro mb-3">
+  Compare facilities, states, fuels, unit types or years on one variable. Each group gets a rank
+  (1&nbsp;=&nbsp;highest), how much higher or lower it is than a reference (in the variable's own unit
+  and as a percentage), and where it stands among the other groups. A statistical test then says whether
+  the differences are bigger than chance alone would produce.
+</p>
+
+{% include "_analysis_nav.html" %}
+
+<form method="get" action="{{ url_for('analysis.compare') }}" class="panel mb-3" id="compare-form">
+  <div class="panel-title">Select records</div>
+  {% include "_analysis_filters.html" %}
+  <div class="row g-2 mt-2 align-items-end">
+    <div class="col-6 col-md-2">
+      <label class="form-label-sm" for="f-by">Compare</label>
+      <select class="form-select form-select-sm" id="f-by" name="by">
+        {% for key, (column, singular, plural) in dimensions.items() %}
+        <option value="{{ key }}"{{ ' selected' if options.by == key }}>{{ plural | capitalize }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-4 col-xl-3">
+      <label class="form-label-sm" for="f-metric">On</label>
+      <select class="form-select form-select-sm" id="f-metric" name="metric">
+        {% for kind, heading in [('measured', 'Measurements'), ('derived', 'Derived indicators'), ('impact', 'TRACI potential impacts')] %}
+        <optgroup label="{{ heading }}">
+          {% for name, var in variables.items() if var.kind == kind %}
+          <option value="{{ name }}"{{ ' selected' if options.metric == name }}>{{ with_meaning(var.label, name, var.unit) }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2">
+      <label class="form-label-sm" for="f-baseline">Compared with</label>
+      <input type="text" class="form-control form-control-sm" id="f-baseline" name="baseline" list="dl-baseline"
+             value="{{ options.baseline or '' }}" placeholder="default reference">
+      <datalist id="dl-baseline">{% for g in result.groups if g.value is not none %}<option value="{{ g.group }}">{{ g.label }}</option>{% endfor %}</datalist>
+    </div>
+    <div class="col-6 col-md-2 col-xl-1">
+      <label class="form-label-sm" for="f-order">Order</label>
+      <select class="form-select form-select-sm" id="f-order" name="order">
+        <option value="desc"{{ ' selected' if options.order == 'desc' }}>Highest first</option>
+        <option value="asc"{{ ' selected' if options.order == 'asc' }}>Lowest first</option>
+      </select>
+    </div>
+    <div class="col-6 col-md-2 col-xl-1">
+      <label class="form-label-sm" for="f-limit">Show</label>
+      <select class="form-select form-select-sm" id="f-limit" name="limit">
+        {% for n in limits %}<option value="{{ n }}"{{ ' selected' if options.limit == n }}>{{ n }}</option>{% endfor %}
+        <option value="all"{{ ' selected' if options.limit is none }}>All</option>
+      </select>
+    </div>
+    <div class="col-auto d-flex gap-2">
+      <button type="submit" class="btn btn-sm btn-primary px-3">Compare</button>
+      <a href="{{ url_for('analysis.compare') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+    </div>
+  </div>
+</form>
+
+{% if errors %}
+<div class="alert alert-warning py-2">
+  {% for message in errors %}<div class="small">{{ message }}</div>{% endfor %}
+</div>
+{% endif %}
+
+{% include "_selection_cards.html" %}
+
+<div class="row g-3 mb-3">
+  <div class="col-lg-7">
+    <div class="panel h-100">
+      <div class="panel-title">What is compared</div>
+      <p class="mb-2">
+        <strong>{{ result.group_count | num }} {{ result.dimension_plural }}</strong> on
+        <strong>{{ metric.label }}</strong>{% if metric.meaning %} ({{ metric.meaning }}){% endif %},
+        in {{ metric.unit }}.
+      </p>
+      <ul class="small mb-0">
+        <li>Each {{ result.dimension }}'s value is the {{ result.aggregation_text }}{% if counts.years | length > 1 %}, over all {{ counts.years | length }} selected years{% endif %}.</li>
+        <li>Reference: <strong>{{ ref.label }}</strong> = {{ val(ref.value) }} {{ metric.unit }}.
+          {% if ref.kind == 'average' %}Each difference says how far a {{ result.dimension }} is above or below an average {{ result.dimension }}.{% elif ref.kind == 'overall' %}Each difference says how far a {{ result.dimension }} is above or below the selection as a whole.{% endif %}
+          Type a {{ result.dimension }} in &ldquo;Compared with&rdquo; to compare against it instead.</li>
+        <li>Percentile: the share of {{ result.dimension_plural }} at or below this value. z-score: how many standard deviations a value is from the mean of the {{ result.dimension_plural }}.</li>
+        {% if result.groups_with_value < result.group_count %}<li>{{ (result.group_count - result.groups_with_value) | num }} {{ result.dimension_plural }} have no reported value and are listed last, without a rank.</li>{% endif %}
+      </ul>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    {% set test = result.test %}
+    <div class="panel h-100 test-panel{{ ' not-significant' if not test.significant }}">
+      <div class="panel-title">Is the difference real? &middot; {{ test.name }}</div>
+      <p class="mb-2">{{ test.interpretation }}</p>
+      {% if test.available %}
+      <p class="small text-body-secondary mb-1">
+        H = {{ test.h | sig(4) }}, degrees of freedom = {{ test.df }}, p {{ '< 0.001' if test.p_value < 0.001 else '= ' ~ (test.p_value | sig(3)) }},
+        effect size ε² = {{ test.epsilon_squared | sig(2) }} ({{ test.effect_size }}); {{ test.observations | num }} unit-year values in {{ test.groups_tested }} {{ result.dimension_plural }}.
+      </p>
+      {% endif %}
+      <p class="small text-body-secondary mb-0">
+        The test ranks every unit-year value, so a few very large plants do not dominate it. A unit's
+        values in different years are related, so read the p-value as a guide rather than proof.
+      </p>
+    </div>
+  </div>
+</div>
+
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+  <h2 class="h5 mb-0 me-auto">Ranking <span class="small text-body-secondary fw-normal">{{ shown | length }} of {{ result.group_count | num }} shown, {{ 'highest' if options.order == 'desc' else 'lowest' }} first</span></h2>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('analysis.compare_download', format='csv', limit=none) }}">CSV (all groups)</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('analysis.compare_download', format='xlsx', limit=none) }}">Excel (with method)</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('api.analysis_compare') }}">JSON</a>
+</div>
+<div class="table-wrap mb-2">
+  <table class="table table-sm table-hover table-data wrap-head mb-0" id="compare-table">
+    <thead>
+      <tr>
+        <th scope="col" class="num">Rank</th>
+        <th scope="col">{{ result.dimension | capitalize }}</th>
+        <th scope="col" class="num">{{ metric.label }}<span class="th-hint">{{ metric.unit }}</span></th>
+        <th scope="col" class="num">Difference<span class="th-hint">vs reference, {{ metric.unit }}</span></th>
+        <th scope="col" class="num">% difference<span class="th-hint">vs reference</span></th>
+        {% if is_sum %}<th scope="col" class="num">Share of total</th>{% endif %}
+        <th scope="col" class="num">Percentile<span class="th-hint">share at or below</span></th>
+        <th scope="col" class="num">z-score<span class="th-hint">std devs from mean</span></th>
+        <th scope="col" class="num">Median unit-year<span class="th-hint">typical single value</span></th>
+        <th scope="col" class="num">Values<span class="th-hint">unit-years with a value</span></th>
+        <th scope="col" class="num">Units</th>
+        <th scope="col" class="num">Facilities</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in shown %}
+      <tr class="{{ 'is-reference' if g.is_reference }}">
+        <td class="num">{{ g.rank if g.rank is not none else '—' }}</td>
+        <td class="fw-semibold">
+          {% if options.by == 'facility' %}<a href="{{ url_for('main.facility_detail', facility_id=g.group) }}">{{ g.label }}</a>{% else %}{{ g.label }}{% endif %}
+          {% if g.is_reference %}<span class="badge text-bg-light border ms-1">reference</span>{% endif %}
+          {% if g.value is not none and g.values_present < 5 %}<span class="small-sample ms-1" title="Fewer than 5 unit-year values: treat the rank with care">small sample</span>{% endif %}
+        </td>
+        <td class="num fw-semibold">{{ val(g.value) }}</td>
+        <td class="num">{{ val(g.difference) }}</td>
+        <td class="num">{{ val(g.pct_difference, 'pct') }}</td>
+        {% if is_sum %}<td class="num">{{ val(g.share_pct, 'share') }}</td>{% endif %}
+        <td class="num">{{ val(g.percentile, 'share') if g.percentile is not none else val(none) }}</td>
+        <td class="num">{{ val(g.z_score, 'sig') }}</td>
+        <td class="num">{{ val(g.median) }}</td>
+        <td class="num">{{ g.values_present | num }}</td>
+        <td class="num">{{ g.units | num }}</td>
+        <td class="num">{{ g.facilities | num }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="12" class="text-center text-body-secondary py-4">No records match these filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+<p class="small text-body-secondary mb-4">
+  {% if result.aggregation == 'ratio' %}A group's rate is its total divided by its total, not the average of its units' rates, so a small unit does not count as much as a large one.{% endif %}
+  Missing values are shown as &mdash; and are never counted as 0.
+</p>
+{% endblock %}

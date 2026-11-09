@@ -37,15 +37,25 @@ from werkzeug.exceptions import HTTPException
 
 from app import db
 from app.models import AnnualRecord, Dataset, Facility, UploadedFile, Unit
-from app.services.analysis import (
-    analysis_frame,
-    dataset_counts,
-    numeric_variables,
-    parse_analysis,
-    selected_units,
-)
+from app.services.analysis import dataset_counts, parse_analysis
 from app.services.search import parse_search
 from app.glossary import glossary_text
+from app.services.impacts import (
+    DISCLAIMER,
+    IMPACT_GROUPS,
+    grouped_impacts,
+    impact_summary,
+    sorted_groups,
+)
+from app.services.statistics import (
+    DIMENSIONS,
+    all_variables,
+    compare_groups,
+    describe_values,
+    level_frame,
+    load_selection,
+    shown_groups,
+)
 from app.services.traci import CATEGORY_LABELS, factors_for
 
 try:  # Optional: the app runs without the Gemini client installed.
@@ -99,10 +109,14 @@ AI_RULES = (
     "parameters, starting from the current ones in SCREEN. Call it once, with open_now=true "
     "when the user asked to go, open, show or change something; then tell them in one "
     "sentence what will open. For files use the download paths, which give a link. "
-    "9. For mean, median, minimum or maximum values, missing-value counts, or any derived "
-    "indicator (CO2/SO2/NOx intensity, heat rate, operating utilization), use "
-    "`summarize_records`. For what data is loaded, imports waiting for review, keys or "
-    "settings, or the TRACI factors, use `get_app_status`. "
+    "9. For mean, median, standard deviation, quartiles, IQR, minimum or maximum values, "
+    "missing-value counts, or any derived indicator (CO2/SO2/NOx intensity, heat rate, "
+    "operating utilization), use `summarize_records`. To compare or rank facilities, states, "
+    "fuels, unit types or years with absolute and percent differences, use `compare_and_rank`. "
+    "For potential environmental impacts (climate change, acid rain, fine particles, smog) use "
+    "`assess_traci_impacts`, and say they are potential impacts, not measured harm. For what "
+    "data is loaded, imports waiting for review, keys or settings, or the TRACI factors, use "
+    "`get_app_status`. "
     "10. You cannot change data or settings. For retrieving data from the EPA, uploading or "
     "approving a file, deleting a dataset, saving an API key or loading shared data, open "
     "the right page (pre-filled where possible) and tell the user exactly which button to "
@@ -131,6 +145,19 @@ SITE_GUIDE = (
     "including co2_intensity, so2_intensity, nox_intensity, heat_rate, "
     "operating_utilization), order, page. Shows counts, missing values, variable "
     "definitions, an indicator preview and the TRACI factors. "
+    "/analysis/statistics : descriptive statistics (count, missing, mean, std dev, min, Q1, "
+    "median, Q3, max, IQR, percentiles, 95% CI, skewness, outliers) of every variable, "
+    "including TRACI impacts; builder filters plus level, group_by (year, state, "
+    "primary_fuel, unit_type) and variable (shown per group). "
+    "/analysis/compare : compare and rank groups; builder filters plus by (state, "
+    "primary_fuel, facility, unit_type, year), metric (any variable or TRACI impact such as "
+    "traci_acidification or traci_global_climate_per_mwh), baseline (a group to compare "
+    "with), order (desc or asc), limit (10, 25, 50, 100, all). "
+    "/analysis/impacts : TRACI impact assessment (kg CO2 eq, kg SO2 eq, kg PM2.5 eq, kg O3 eq "
+    "and per MWh) with the calculation shown; builder filters plus group_by (state, "
+    "primary_fuel, unit_type, year, facility), metric (impact to rank by), version, limit. "
+    "/data-sources : where the data comes from (CAMPD, TRACI) and the loaded datasets. "
+    "/coverage : coverage dashboard with records by year and facilities by state. "
     "/compare : year-by-year comparison chart; facility_id (up to 8, comma-separated) or "
     "unit (internal unit keys, which query_epa_database returns as unit_key), metric "
     "(co2_mass, so2_mass, nox_mass, gross_load, heat_input, operating_time). "
@@ -142,6 +169,8 @@ SITE_GUIDE = (
     "/settings : CAMPD and Gemini API keys, shared data. "
     "Downloads (links, not pages): /download/records with explorer filters and "
     "format=csv or xlsx; /analysis/download with builder filters and format=csv or xlsx; "
+    "/analysis/statistics/download, /analysis/compare/download and /analysis/impacts/download "
+    "with the same parameters as their pages and format=csv or xlsx; "
     "/download/issues?dataset=<id>; /download/provenance."
 )
 
@@ -459,7 +488,7 @@ def _round(value: Any) -> Any:
 
 
 def summarize_records(query: str = "", level: str = "unit") -> dict:
-    """Statistics for any selection of records: how many records, facilities, units and years; and for every measurement and derived indicator (CO2/SO2/NOx intensity, heat rate, operating utilization) the count, missing count, mean, median, minimum and maximum.
+    """Statistics for any selection of records: how many records, facilities, units and years; and for every measurement, derived indicator (CO2/SO2/NOx intensity, heat rate, operating utilization) and TRACI potential impact the count, missing count, mean, median, standard deviation, minimum, first and third quartiles, interquartile range and maximum.
 
     Args:
         query: Record filters as URL query parameters, the same as the Data Explorer, e.g. 'state=OH&primary_fuel=coal&year=2020'. Empty for all records.
@@ -471,22 +500,15 @@ def summarize_records(query: str = "", level: str = "unit") -> dict:
         analysis = parse_analysis(args)
         if analysis.errors:
             return {"status": "error", "message": " ".join(analysis.errors)}
-        units = selected_units(analysis)
-        frame = analysis_frame(analysis, units)
+        units, cats = load_selection(analysis)
+        frame = level_frame(units, analysis.level, cats)
         statistics = {}
-        for name, var in numeric_variables(analysis.level).items():
-            column = frame[name] if name in frame else None
-            values = column.dropna() if column is not None else []
+        for name, var in all_variables(analysis.level, cats).items():
+            stats = describe_values(frame[name] if name in frame else [])
             statistics[name] = {
                 "unit": var.unit,
-                "count": int(len(values)),
-                "missing": int(len(frame) - len(values)),
-                **({
-                    "mean": _round(values.mean()),
-                    "median": _round(values.median()),
-                    "min": _round(values.min()),
-                    "max": _round(values.max()),
-                } if len(values) else {}),
+                **{key: stats[key] if key in ("count", "missing") else _round(stats[key])
+                   for key in SUMMARY_STATISTICS if stats[key] is not None},
             }
         return {
             "status": "success" if len(frame) else "no_records",
@@ -497,6 +519,119 @@ def summarize_records(query: str = "", level: str = "unit") -> dict:
         }
     except Exception as exc:  # report the problem to the model instead of crashing
         logger.exception("summarize_records failed")
+        db.session.rollback()
+        return {"status": "error", "message": str(exc)}
+
+
+SUMMARY_STATISTICS = ("count", "missing", "mean", "median", "std", "min", "q1", "q3", "iqr", "max")
+
+
+def _selection_from(query: str):
+    args = MultiDict([(k, v) for k, v in parse_qsl(query or "")])
+    analysis = parse_analysis(args)
+    if analysis.errors:
+        return None, None, None, {"status": "error", "message": " ".join(analysis.errors)}
+    units, cats = load_selection(analysis)
+    return analysis, units, cats, None
+
+
+def compare_and_rank(query: str = "", by: str = "state", metric: str = "co2_intensity",
+                     baseline: str = "", order: str = "desc", limit: int = 10) -> dict:
+    """Compare and rank groups of records on one variable: each group's value, rank (1 = highest), percentile, z-score, and absolute and percent difference from a reference, plus a Kruskal-Wallis test of whether the groups really differ.
+
+    Args:
+        query: Record filters as URL query parameters, e.g. 'year=2020&primary_fuel=coal'. Empty for all records.
+        by: What to compare: 'state', 'primary_fuel', 'facility', 'unit_type' or 'year'.
+        metric: The variable, e.g. 'co2_mass', 'co2_intensity', 'heat_rate', 'so2_intensity', 'traci_acidification', 'traci_global_climate_per_mwh'.
+        baseline: A group to compare every other group with, e.g. 'OH' or 'Coal'. Empty compares with the average group (for totals) or all records combined (for rates).
+        order: 'desc' for highest first, 'asc' for lowest first.
+        limit: How many groups to return, 1 to 25.
+    """
+    try:
+        analysis, units, cats, error = _selection_from(query)
+        if error:
+            return error
+        variables = all_variables("unit", cats)
+        if by not in DIMENSIONS:
+            return {"status": "error", "message": f"by must be one of {', '.join(DIMENSIONS)}."}
+        if metric not in variables:
+            return {"status": "error", "message": f"Unknown metric '{metric}'. Use one of "
+                                                  f"{', '.join(variables)}."}
+        if not len(units):
+            return {"status": "no_records", "selection": dataset_counts(units)}
+        result = compare_groups(units, variables[metric], by, baseline or None)
+        groups = shown_groups(result["groups"], "asc" if order == "asc" else "desc",
+                              max(1, min(int(limit or 10), 25)))
+        keep = ("rank", "label", "value", "difference", "pct_difference", "share_pct",
+                "percentile", "values_present")
+        return {
+            "status": "success",
+            "selection": dataset_counts(units),
+            "compared": f"{result['group_count']} {result['dimension_plural']}",
+            "metric": {"name": metric, "label": result["metric"]["label"],
+                       "unit": result["metric"]["unit"]},
+            "group_value": "each group's value is the " + result["aggregation_text"],
+            "reference": {"label": result["reference"]["label"],
+                          "value": _round(result["reference"]["value"])},
+            "groups": [{k: g[k] if k in ("rank", "label", "values_present") else _round(g[k])
+                        for k in keep} for g in groups],
+            "test": result["test"]["interpretation"],
+            "warnings": result["errors"],
+            "page": "/analysis/compare",
+        }
+    except Exception as exc:
+        logger.exception("compare_and_rank failed")
+        db.session.rollback()
+        return {"status": "error", "message": str(exc)}
+
+
+def assess_traci_impacts(query: str = "", group_by: str = "", limit: int = 10) -> dict:
+    """Potential environmental and health impacts of the selected emissions with EPA TRACI: for each impact category (climate change in kg CO2 eq, acid rain in kg SO2 eq, fine particles in kg PM2.5 eq, smog in kg O3 eq) the total, the impact per MWh, each pollutant's share, and optionally totals for each group.
+
+    Args:
+        query: Record filters as URL query parameters, e.g. 'year=2020&state=OH'. Empty for all records.
+        group_by: Optional grouping: 'state', 'primary_fuel', 'unit_type', 'year' or 'facility'.
+        limit: How many groups to return, 1 to 25, largest climate impact first.
+    """
+    try:
+        analysis, units, cats, error = _selection_from(query)
+        if error:
+            return error
+        if not cats:
+            return {"status": "error", "message": "No TRACI factors are stored."}
+        if not len(units):
+            return {"status": "no_records", "selection": dataset_counts(units)}
+        categories = [
+            {"category": c["label"], "unit": c["unit"], "total": _round(c["total"]),
+             "per_mwh": _round(c["intensity"]), "formula": c["formula"],
+             "unit_years_used": c["records_used"], "unit_years_left_out": c["records_missing"],
+             "pollutant_shares_pct": {p["pollutant_name"]: _round(p["share_pct"])
+                                      for p in c["pollutants"]}}
+            for c in impact_summary(units, cats)
+        ]
+        body = {
+            "status": "success",
+            "traci_version": cats[0].version,
+            "selection": dataset_counts(units),
+            "categories": categories,
+            "note": DISCLAIMER + " A unit-year is left out of a category when one of its "
+                    "pollutants was not reported.",
+            "page": "/analysis/impacts",
+        }
+        if group_by:
+            if group_by not in IMPACT_GROUPS:
+                return {"status": "error",
+                        "message": f"group_by must be one of {', '.join(IMPACT_GROUPS)}."}
+            rows = sorted_groups(grouped_impacts(units, cats, group_by), "traci_global_climate",
+                                 max(1, min(int(limit or 10), 25)))
+            body["groups"] = [
+                {"group": r["label"],
+                 **{cat.short_label: _round(r["impacts"][cat.name]["total"]) for cat in cats}}
+                for r in rows
+            ]
+        return body
+    except Exception as exc:
+        logger.exception("assess_traci_impacts failed")
         db.session.rollback()
         return {"status": "error", "message": str(exc)}
 
@@ -565,6 +700,11 @@ PAGES = {
     "main.unit_detail": "Unit page",
     "main.dataset_detail": "Dataset page",
     "analysis.builder": "Analytical Dataset Builder",
+    "analysis.statistics": "Descriptive statistics",
+    "analysis.compare": "Compare & rank",
+    "analysis.impacts": "TRACI impact assessment",
+    "main.data_sources": "Data Sources",
+    "main.coverage": "Coverage Dashboard",
     "retrieval.retrieval_form": "Data Retrieval",
     "upload.upload_form": "File Intake & Validation",
     "upload.review": "Review import",
@@ -577,6 +717,9 @@ DOWNLOADS = {
     "download.provenance": "Download provenance",
     "analysis.download": "Download analytical dataset",
     "analysis.configuration": "Download analysis configuration",
+    "analysis.statistics_download": "Download statistics",
+    "analysis.compare_download": "Download comparison",
+    "analysis.impacts_download": "Download TRACI impacts",
 }
 
 
@@ -589,7 +732,7 @@ def _page_problems(endpoint: str, view_args: dict, args: MultiDict) -> tuple[lis
     label = PAGES.get(endpoint) or DOWNLOADS[endpoint]
     if endpoint in ("main.explorer", "download.records"):
         return parse_search(args).errors, label
-    if endpoint in ("analysis.builder", "analysis.download", "analysis.configuration"):
+    if endpoint.startswith("analysis."):
         return parse_analysis(args).errors, label
     if endpoint == "main.facility_detail":
         facility = db.session.get(Facility, view_args["facility_id"])
@@ -668,7 +811,8 @@ def navigate(path: str, query: str = "", open_now: bool = True) -> dict:
 # ---------------------------------------------------------------------------
 
 
-TOOLS = (query_epa_database, summarize_records, get_app_status, navigate)
+TOOLS = (query_epa_database, summarize_records, compare_and_rank, assess_traci_impacts,
+         get_app_status, navigate)
 
 
 def system_instruction() -> str:

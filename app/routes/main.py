@@ -8,7 +8,6 @@ from typing import Any
 from flask import Blueprint, flash, redirect, render_template, request, url_for
 from sqlalchemy import delete, func, select
 
-
 from app import db
 from app.models import (
     AnnualRecord,
@@ -30,6 +29,8 @@ from app.services.search import (
     parse_search,
     run_search,
 )
+from app.services.traci import SOURCE_URL as TRACI_SOURCE_URL
+from app.services.traci import factors_for
 
 main_bp = Blueprint("main", __name__)
 
@@ -46,7 +47,10 @@ def _int_list(name: str) -> list[int]:
             if part.isdigit() and int(part) not in values:
                 values.append(int(part))
     return values
+
+
 def _coverage_stats() -> dict[str, Any]:
+    """Totals for the coverage page: facilities, units, records, states, years."""
     year_min, year_max = db.session.execute(
         select(func.min(AnnualRecord.reporting_year), func.max(AnnualRecord.reporting_year))
     ).one()
@@ -64,7 +68,7 @@ def _coverage_stats() -> dict[str, Any]:
 
 @main_bp.route("/data-sources")
 def data_sources():
-    """Where the data comes from: CAMPD summary plus every imported dataset."""
+    """Where the data comes from: CAMPD, the TRACI factors, and every imported dataset."""
     datasets = db.session.scalars(
         select(Dataset).order_by(Dataset.retrieval_date.desc())
     ).all()
@@ -75,7 +79,15 @@ def data_sources():
             )
         ).all()
     )
-    return render_template("data_sources.html", datasets=datasets, source_counts=source_counts)
+    factors = factors_for()
+    return render_template(
+        "data_sources.html",
+        datasets=datasets,
+        source_counts=source_counts,
+        traci_version=factors[0].version if factors else None,
+        traci_count=len(factors),
+        traci_url=TRACI_SOURCE_URL,
+    )
 
 
 @main_bp.route("/coverage")

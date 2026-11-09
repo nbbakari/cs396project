@@ -1,0 +1,14 @@
+{# Counts of what a selection holds. Needs `counts` (see dataset_counts). #}
+<div class="row row-cols-2 row-cols-md-5 g-3 mb-3">
+  <div class="col"><div class="stat-panel"><div class="stat-label">Records</div><div class="stat-value">{{ counts.records | num }}</div><div class="stat-sub">unit-years</div></div></div>
+  <div class="col"><div class="stat-panel"><div class="stat-label">Facilities</div><div class="stat-value">{{ counts.facilities | num }}</div><div class="stat-sub">power plants</div></div></div>
+  <div class="col"><div class="stat-panel"><div class="stat-label">Units</div><div class="stat-value">{{ counts.units | num }}</div><div class="stat-sub">boilers and turbines</div></div></div>
+  <div class="col"><div class="stat-panel"><div class="stat-label">States</div><div class="stat-value">{{ counts.states | num }}</div></div></div>
+  <div class="col">
+    <div class="stat-panel">
+      <div class="stat-label">Years</div>
+      <div class="stat-value">{{ counts.years | length }}</div>
+      <div class="stat-sub">{% if counts.years %}{{ counts.years | join(', ') }}{% else %}none{% endif %}</div>
+    </div>
+  </div>
+</div>

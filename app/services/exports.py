@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import io
+import math
 from datetime import date, datetime
 from typing import Any, Iterable, Iterator
 
@@ -28,7 +29,11 @@ def _cell(value: Any) -> Any:
     if value is None:
         return None
     if isinstance(value, float):
-        return round(value, 6)
+        if math.isnan(value):
+            return None
+        # Ten significant digits, so a tiny rate such as 3.4e-07 t/MWh is
+        # never rounded to 0.
+        return float(f"{value:.10g}")
     if isinstance(value, (datetime, date)):
         return value.isoformat()
     return value
@@ -81,6 +86,32 @@ def tabular_response(
         mimetype=FORMATS["csv"][1],
         headers={
             "Content-Disposition": f'attachment; filename="{_filename(filename_stem, "csv")}"'
+        },
+    )
+
+
+def workbook_response(
+    sheets: list[tuple[str, list[str] | None, Iterable[Iterable[Any]]]], filename_stem: str
+) -> Response:
+    """An Excel download of several sheets, each (title, header or None, rows).
+
+    Used for analysis results, which carry an "about" sheet describing the
+    filters, method and definitions next to the data.
+    """
+    workbook = Workbook(write_only=True)
+    for title, header, rows in sheets:
+        sheet = workbook.create_sheet(title=title[:31])
+        if header:
+            sheet.append(header)
+        for row in rows:
+            sheet.append([str(v) if isinstance(v, (list, dict)) else _cell(v) for v in row])
+    output = io.BytesIO()
+    workbook.save(output)
+    return Response(
+        output.getvalue(),
+        mimetype=FORMATS["xlsx"][1],
+        headers={
+            "Content-Disposition": f'attachment; filename="{_filename(filename_stem, "xlsx")}"'
         },
     )
 

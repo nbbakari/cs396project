@@ -41,6 +41,23 @@ def _significant(value: Any, digits: int = 3, trim: bool = False) -> str:
     return text.rstrip("0").rstrip(".") if trim and "." in text else text
 
 
+def _big(value: Any, digits: int = 3) -> str:
+    """A large number in words, e.g. 1.40 trillion, so totals of kilograms
+    stay readable; blank for None or NaN."""
+    if value is None or value == "":
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if math.isnan(number):
+        return ""
+    for size, word in ((1e12, "trillion"), (1e9, "billion"), (1e6, "million")):
+        if abs(number) >= size:
+            return f"{_significant(number / size, digits)} {word}"
+    return _significant(number, digits)
+
+
 def _when(value: Any, fmt: str = "%Y-%m-%d %H:%M") -> str:
     if isinstance(value, (datetime, date)):
         return value.strftime(fmt)
@@ -101,6 +118,7 @@ def sort_url(key: str) -> str:
 def register_template_helpers(app: Flask) -> None:
     app.add_template_filter(_number, "num")
     app.add_template_filter(_significant, "sig")
+    app.add_template_filter(_big, "big")
     app.add_template_filter(_when, "when")
     app.add_template_filter(_from_json, "fromjson")
     app.add_template_global(meaning)

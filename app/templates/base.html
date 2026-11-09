@@ -41,7 +41,7 @@
           </div>
 
           <div class="sidebar-section-label">Core modules</div>
-                  {% set nav_items = [
+          {% set nav_items = [
             ('main.index', 'Dashboard / Overview'),
             ('main.data_sources', 'Data Sources'),
             ('main.coverage', 'Coverage Dashboard'),
@@ -58,6 +58,7 @@
             'main.facility_detail': 'main.explorer',
             'main.unit_detail': 'main.explorer',
             'main.dataset_detail': 'download.downloads_page',
+            'analysis.compare': 'analysis.statistics',
           } %}
           {% set active_endpoint = section_of.get(request.endpoint, request.endpoint) %}
           <nav class="sidebar-nav nav flex-column gap-1">
@@ -68,12 +69,17 @@
           </nav>
 
           <div class="sidebar-section-label">Phase 2: Analysis</div>
+          {% set analysis_items = [
+            ('analysis.builder', 'Analytical Dataset Builder'),
+            ('analysis.statistics', 'Statistics &amp; Comparison'),
+            ('analysis.impacts', 'TRACI Impact Indicators'),
+          ] %}
           <nav class="sidebar-nav nav flex-column gap-1">
-            <a class="nav-link{{ ' active' if active_endpoint == 'analysis.builder' }}" href="{{ url_for('analysis.builder') }}"
-               {% if active_endpoint == 'analysis.builder' %}aria-current="page"{% endif %}>Analytical Dataset Builder</a>
-            <span class="nav-link disabled">Statistics &amp; Comparison <span class="planned-badge">Planned</span></span>
+            {% for endpoint, label in analysis_items %}
+            <a class="nav-link{{ ' active' if active_endpoint == endpoint }}" href="{{ url_for(endpoint) }}"
+               {% if active_endpoint == endpoint %}aria-current="page"{% endif %}>{{ label | safe }}</a>
+            {% endfor %}
             <span class="nav-link disabled">Visualization Dashboard <span class="planned-badge">Planned</span></span>
-            <span class="nav-link disabled">TRACI Impact Indicators <span class="planned-badge">Planned</span></span>
             <span class="nav-link disabled">Prediction &amp; Scenarios <span class="planned-badge">Planned</span></span>
           </nav>
       
@@ -144,7 +150,7 @@
       </div>
     </div>
 
-        <script
+    <script
       src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
       integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
       crossorigin="anonymous"

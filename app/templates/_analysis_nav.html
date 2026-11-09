@@ -1,0 +1,17 @@
+{# Tabs between the Phase 2 pages. Each link keeps the record filters and
+   drops the options that belong to one page only. #}
+{% set analysis_tabs = [
+  ('analysis.builder', 'Dataset builder'),
+  ('analysis.statistics', 'Descriptive statistics'),
+  ('analysis.compare', 'Compare & rank'),
+  ('analysis.impacts', 'TRACI impacts'),
+] %}
+<ul class="nav nav-tabs analysis-tabs mb-3">
+  {% for endpoint, label in analysis_tabs %}
+  <li class="nav-item">
+    <a class="nav-link{{ ' active' if request.endpoint == endpoint }}"
+       {% if request.endpoint == endpoint %}aria-current="page"{% endif %}
+       href="{{ url_for_query(endpoint, page=none, yoy=none, sort=none, order=none, group_by=none, variable=none, by=none, metric=none, baseline=none, limit=none, version=none, format=none) }}">{{ label }}</a>
+  </li>
+  {% endfor %}
+</ul>

@@ -1,7 +1,19 @@
 /**
- * Analytical dataset builder: "copy link" and loading a saved configuration.
+ * Phase 2 pages: "copy link", loading a saved configuration (builder), and
+ * switches that show extra table columns (statistics).
  */
 (function () {
+  // <input type="checkbox" data-toggle-class="show-more" data-target="#table">
+  // adds the class to the target while checked (and to every .stats-table).
+  document.querySelectorAll("[data-toggle-class]").forEach((toggle) => {
+    const apply = () => {
+      document.querySelectorAll(`${toggle.dataset.target}, .stats-table`).forEach((el) =>
+        el.classList.toggle(toggle.dataset.toggleClass, toggle.checked));
+    };
+    toggle.addEventListener("change", apply);
+    apply();
+  });
+
   const copyButton = document.getElementById("copy-link");
   if (copyButton) {
     copyButton.addEventListener("click", () => {

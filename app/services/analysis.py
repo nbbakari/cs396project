@@ -37,7 +37,7 @@ from __future__ import annotations
 import dataclasses
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Optional
+from typing import Any, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -51,6 +51,8 @@ LEVELS = ("unit", "facility")
 # Parameters the analysis reads itself; every other one is an explorer filter.
 ANALYSIS_PARAMS = (
     "level", "yoy", "sort", "order", "page", "per_page", "limit", "group_by", "per_group",
+    # Statistics, comparison and TRACI pages
+    "variable", "by", "metric", "baseline", "version", "format",
 )
 
 # Denominator marker for indicators divided by the hours in the reporting year.
@@ -214,9 +216,16 @@ def add_indicators(frame: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
-def facility_frame(units: pd.DataFrame) -> pd.DataFrame:
-    """One row per facility-year from unit-years (see the module docstring)."""
+def facility_frame(units: pd.DataFrame, extra: Sequence[Variable] = ()) -> pd.DataFrame:
+    """One row per facility-year from unit-years (see the module docstring).
+
+    ``extra`` adds more variables already on the unit rows, such as TRACI
+    impacts: one with a numerator and denominator is recomputed from the
+    facility's paired totals, any other is added up.
+    """
     paired = [v for v in DERIVED.values() if v.name not in UNIT_ONLY]
+    paired += [v for v in extra if v.numerator and v.denominator]
+    totals = FACILITY_TOTALS + [v.name for v in extra if not (v.numerator and v.denominator)]
     work = units.copy()
     for var in paired:
         both = work[var.numerator].notna() & work[var.denominator].notna()
@@ -226,7 +235,7 @@ def facility_frame(units: pd.DataFrame) -> pd.DataFrame:
 
     grouped = work.groupby(FACILITY_KEYS, dropna=False, sort=False)
     pair_columns = [f"_{v.name}_{part}" for v in paired for part in ("num", "den")]
-    out = grouped[FACILITY_TOTALS + pair_columns].sum(min_count=1)
+    out = grouped[totals + pair_columns].sum(min_count=1)
     out.insert(0, "unit_count", grouped["unit_key"].nunique())
     out.insert(1, "units_with_missing_values", grouped["_has_gap"].sum().astype("int64"))
     for var in paired:

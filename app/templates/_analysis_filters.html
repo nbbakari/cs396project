@@ -1,0 +1,59 @@
+{# The record filters shared by every Phase 2 page (builder, statistics,
+   comparison, TRACI impacts). Same URL parameters as the Data Explorer, so a
+   selection moves between pages unchanged. Needs `choices` and `controls_open`. #}
+{% macro text_input(name, label, placeholder='', datalist=none, width='') %}
+<div class="{{ width or 'col-6 col-md-3 col-xl-2' }}">
+  <label for="f-{{ name }}" class="form-label-sm">{{ label }}</label>
+  <input type="text" class="form-control form-control-sm" id="f-{{ name }}" name="{{ name }}"
+         value="{{ request.args.get(name, '') }}" placeholder="{{ placeholder }}"
+         {% if datalist %}list="dl-{{ datalist }}"{% endif %}>
+</div>
+{% endmacro %}
+<div class="row g-2">
+  {% for name, label, placeholder in [('year_min', 'From year', 'first'), ('year_max', 'To year', 'last')] %}
+  <div class="col-6 col-md-2 col-xl-1">
+    <label class="form-label-sm" for="f-{{ name }}">{{ label }}</label>
+    <select class="form-select form-select-sm" id="f-{{ name }}" name="{{ name }}">
+      <option value="">{{ placeholder }}</option>
+      {% for y in choices.years | sort %}<option value="{{ y }}"{{ ' selected' if request.args.get(name) == y | string }}>{{ y }}</option>{% endfor %}
+    </select>
+  </div>
+  {% endfor %}
+  {{ text_input('state', 'State', 'KY or KY,WV', 'states') }}
+  {{ text_input('facility_id', 'Facility ID', '6002 or 3,6002') }}
+  {{ text_input('facility_name', 'Facility name', 'contains…') }}
+  {{ text_input('unit_id', 'Unit ID', 'e.g. 1 or CT1') }}
+  {{ text_input('primary_fuel', 'Primary fuel', 'e.g. coal', 'primary_fuels') }}
+  {{ text_input('unit_type', 'Unit type', 'contains…', 'unit_types') }}
+  <div class="col-6 col-md-3 col-xl-2">
+    <label class="form-label-sm" for="f-op_time_min">Min. operating time (hours running)</label>
+    <input type="number" min="0" class="form-control form-control-sm" id="f-op_time_min" name="op_time_min"
+           value="{{ request.args.get('op_time_min', '') }}" placeholder="e.g. 1000">
+  </div>
+  <div class="col-6 col-md-3 col-xl-2">
+    <label class="form-label-sm" for="f-gross_load_min">Min. gross load (electricity generated, MWh)</label>
+    <input type="number" min="0" class="form-control form-control-sm" id="f-gross_load_min" name="gross_load_min"
+           value="{{ request.args.get('gross_load_min', '') }}" placeholder="e.g. 100000">
+  </div>
+</div>
+
+<details class="mt-3"{{ ' open' if controls_open }}>
+  <summary class="small fw-semibold text-body-secondary">Control technology (pollution-removal equipment) and emissions programs</summary>
+  <div class="row g-2 mt-1">
+    {{ text_input('so2_control', 'SO₂ control (' ~ meaning('so2_control') ~ ')', 'contains, none, any, not …', 'so2_controls') }}
+    {{ text_input('nox_control', 'NOx control (' ~ meaning('nox_control') ~ ')', 'contains, none, any, not …', 'nox_controls') }}
+    {{ text_input('pm_control', 'PM control (' ~ meaning('pm_control') ~ ')', 'contains, none, any, not …', 'pm_controls') }}
+    {{ text_input('hg_control', 'Hg control (' ~ meaning('hg_control') ~ ')', 'contains, none, any, not …', 'hg_controls') }}
+    {{ text_input('program', 'Program code', 'e.g. ARP', 'programs') }}
+  </div>
+</details>
+
+<p class="small text-body-secondary mt-2 mb-0">
+  Text filters match any part of the value, ignoring case. For controls, <code>none</code> finds
+  units without one, <code>any</code> units with one, and <code>not baghouse</code> excludes one.
+  Minimums apply to each unit-year.
+</p>
+
+{% for name, values in choices.items() if name != 'years' %}
+<datalist id="dl-{{ name }}">{% for v in values %}<option value="{{ v }}">{% endfor %}</datalist>
+{% endfor %}

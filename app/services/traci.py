@@ -183,9 +183,15 @@ def _version_key(version: str) -> tuple[int, ...]:
     return tuple(int(part) for part in re.findall(r"\d+", version))
 
 
+def versions() -> list[str]:
+    """The stored TRACI versions, newest first."""
+    stored = db.session.scalars(select(TraciFactor.version).distinct()).all()
+    return sorted(stored, key=_version_key, reverse=True)
+
+
 def latest_version() -> Optional[str]:
-    versions = db.session.scalars(select(TraciFactor.version).distinct()).all()
-    return max(versions, key=_version_key) if versions else None
+    stored = versions()
+    return stored[0] if stored else None
 
 
 def factors_for(version: Optional[str] = None) -> list[TraciFactor]:

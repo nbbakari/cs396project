@@ -42,3 +42,22 @@
 <a class="btn btn-sm btn-outline-secondary" href="{{ endpoint_url }}{{ '&' if '?' in endpoint_url else '?' }}format=csv">CSV</a>
 <a class="btn btn-sm btn-outline-secondary" href="{{ endpoint_url }}{{ '&' if '?' in endpoint_url else '?' }}format=xlsx">Excel</a>
 {% endmacro %}
+
+{# A number, or a dash marked as missing -- never a 0 standing in for "unknown".
+   kind: auto (words for millions and up, else 3 significant figures), sig, int,
+   pct (signed percentage), share (0-100, unsigned %), big (always in words). #}
+{% macro val(v, kind='auto') -%}
+{%- if v is none -%}<span class="missing-value" title="Missing: not reported, or undefined (e.g. zero gross load)">&mdash;</span>
+{%- elif kind == 'pct' -%}{{ '+' if v > 0 }}{{ v | num(1) }}%
+{%- elif kind == 'share' -%}{{ v | num(1) }}%
+{%- elif kind == 'int' -%}{{ v | num }}
+{%- elif kind == 'sig' -%}{{ v | sig }}
+{%- elif kind == 'big' or (v | abs) >= 1000000 -%}<span title="{{ v | num(2) }}">{{ v | big }}</span>
+{%- else -%}{{ v | sig }}{%- endif -%}
+{%- endmacro %}
+
+{# A variable's name with its everyday meaning and unit, for a table row. #}
+{% macro variable_cell(var) -%}
+<span class="fw-semibold">{{ var.label }}</span>{% if meaning(var.name) %} <span class="text-body-secondary">({{ meaning(var.name) }})</span>{% endif %}
+<div class="small text-body-secondary"><code class="small">{{ var.name }}</code> &middot; {{ var.unit }}</div>
+{%- endmacro %}
