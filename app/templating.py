@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import json
+import math
 from datetime import date, datetime
 from typing import Any
 from urllib.parse import urlencode
 
 from flask import Flask, request, url_for
+
+from app.glossary import meaning, traci_category, with_meaning
 
 
 def _number(value: Any, decimals: int = 0) -> str:
@@ -18,6 +21,41 @@ def _number(value: Any, decimals: int = 0) -> str:
         return f"{float(value):,.{decimals}f}"
     except (TypeError, ValueError):
         return str(value)
+
+
+def _significant(value: Any, digits: int = 3, trim: bool = False) -> str:
+    """A number to about ``digits`` significant figures, so small ratios such as
+    0.000412 stay readable; blank for None or NaN. ``trim`` drops trailing zeros."""
+    if value is None or value == "":
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if math.isnan(number):
+        return ""
+    if number == 0:
+        return "0"
+    decimals = max(0, min(8, digits - 1 - math.floor(math.log10(abs(number)))))
+    text = f"{number:,.{decimals}f}"
+    return text.rstrip("0").rstrip(".") if trim and "." in text else text
+
+
+def _big(value: Any, digits: int = 3) -> str:
+    """A large number in words, e.g. 1.40 trillion, so totals of kilograms
+    stay readable; blank for None or NaN."""
+    if value is None or value == "":
+        return ""
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if math.isnan(number):
+        return ""
+    for size, word in ((1e12, "trillion"), (1e9, "billion"), (1e6, "million")):
+        if abs(number) >= size:
+            return f"{_significant(number / size, digits)} {word}"
+    return _significant(number, digits)
 
 
 def _when(value: Any, fmt: str = "%Y-%m-%d %H:%M") -> str:
@@ -79,8 +117,13 @@ def sort_url(key: str) -> str:
 
 def register_template_helpers(app: Flask) -> None:
     app.add_template_filter(_number, "num")
+    app.add_template_filter(_significant, "sig")
+    app.add_template_filter(_big, "big")
     app.add_template_filter(_when, "when")
     app.add_template_filter(_from_json, "fromjson")
+    app.add_template_global(meaning)
+    app.add_template_global(with_meaning)
+    app.add_template_global(traci_category)
     app.add_template_global(url_with)
     app.add_template_global(url_for_query)
     app.add_template_global(sort_url)

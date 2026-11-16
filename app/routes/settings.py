@@ -1,9 +1,9 @@
-"""Settings: the CAMPD API key and the team's shared data.
+"""Settings: the CAMPD and Gemini API keys and the team's shared data.
 
-The API key is entered in the browser once, checked against the EPA, and
-saved as CAMPD_API_KEY in this machine's .env file -- the server-side
-environment the app reads it from. It is never sent back to the browser;
-pages show only its last four characters.
+Each API key is entered in the browser once, checked with its provider, and
+saved in this machine's .env file (CAMPD_API_KEY, GEMINI_API_KEY) -- the
+server-side environment the app reads it from. A key is never sent back to
+the browser; pages show only its last four characters.
 """
 
 from __future__ import annotations
@@ -19,6 +19,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app import db
 from app.models import AnnualRecord, Dataset
+from app.services.assistant import KEY_SIGNUP_URL as GEMINI_KEY_SIGNUP_URL
+from app.services.assistant import AssistantError, is_installed, verify_key
 from app.services.campd import API_KEY_SIGNUP_URL, CampdError, verify_api_key
 from app.services.shared import SharedDataError, local_has_data, pull_shared
 
@@ -26,11 +28,31 @@ settings_bp = Blueprint("settings", __name__)
 
 # api.data.gov keys (which CAMPD uses) are 40 letters and digits; allow some slack.
 _KEY_PATTERN = re.compile(r"^[A-Za-z0-9_-]{16,128}$")
+# Gemini keys are about 39 characters; allow other lengths.
+_GEMINI_KEY_PATTERN = re.compile(r"^[A-Za-z0-9_.-]{20,200}$")
+
+
+def _masked(config_name: str) -> str | None:
+    key = current_app.config.get(config_name)
+    return f"••••{key[-4:]}" if key else None
 
 
 def masked_api_key() -> str | None:
-    key = current_app.config.get("CAMPD_API_KEY")
-    return f"••••{key[-4:]}" if key else None
+    return _masked("CAMPD_API_KEY")
+
+
+def _save_env(name: str, value: str | None) -> Path:
+    """Write (or with None, remove) one setting in .env and the running app."""
+    env_file = Path(current_app.config["ENV_FILE"])
+    if value is None:
+        if env_file.exists():
+            unset_key(env_file, name, quote_mode="never")
+        os.environ.pop(name, None)
+    else:
+        set_key(env_file, name, value, quote_mode="never")
+        os.environ[name] = value
+    current_app.config[name] = value
+    return env_file
 
 
 def _next_url() -> str:
@@ -43,7 +65,13 @@ def _next_url() -> str:
 
 @settings_bp.app_context_processor
 def inject_api_key_status():
-    return {"api_key_masked": masked_api_key(), "api_key_signup_url": API_KEY_SIGNUP_URL}
+    return {
+        "api_key_masked": masked_api_key(),
+        "api_key_signup_url": API_KEY_SIGNUP_URL,
+        "gemini_key_masked": _masked("GEMINI_API_KEY"),
+        "gemini_installed": is_installed(),
+        "gemini_key_signup_url": GEMINI_KEY_SIGNUP_URL,
+    }
 
 
 @settings_bp.route("/settings")
@@ -107,6 +135,38 @@ def remove_api_key():
     current_app.config["CAMPD_API_KEY"] = None
     flash("The API key was removed from this computer.", "info")
     return redirect(url_for("settings.settings_page"))
+
+
+@settings_bp.route("/settings/gemini-key", methods=["POST"])
+def save_gemini_key():
+    """Check a Gemini API key with Google and save it for the AI assistant."""
+    key = (request.form.get("gemini_key") or "").strip()
+    target = url_for("settings.settings_page", _anchor="gemini-key")
+    if not _GEMINI_KEY_PATTERN.match(key):
+        flash("That doesn't look like a Gemini API key. Paste the whole key from Google AI Studio.",
+              "danger")
+        return redirect(target)
+    try:
+        verify_key(key)
+    except AssistantError as exc:
+        if exc.status == 401:
+            flash("Google rejected that key. Check that it was copied completely.", "danger")
+            return redirect(target)
+        flash(f"The key could not be checked with Google right now ({exc}); it was saved anyway.",
+              "warning")
+    else:
+        flash("Google accepted your Gemini API key.", "success")
+    env_file = _save_env("GEMINI_API_KEY", key)
+    flash(f"Saved as GEMINI_API_KEY in {env_file.name} on this computer. "
+          "The Ask AI panel is ready.", "success")
+    return redirect(target)
+
+
+@settings_bp.route("/settings/gemini-key/remove", methods=["POST"])
+def remove_gemini_key():
+    _save_env("GEMINI_API_KEY", None)
+    flash("The Gemini API key was removed from this computer.", "info")
+    return redirect(url_for("settings.settings_page", _anchor="gemini-key"))
 
 
 @settings_bp.route("/settings/shared-data/load", methods=["POST"])

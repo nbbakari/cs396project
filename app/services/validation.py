@@ -719,8 +719,13 @@ def validate(df: pd.DataFrame, *, current_year: Optional[int] = None) -> Validat
         )
 
     # --- blank required metrics -> 0 ----------------------------------------
+    # The schema needs a number, so a blank is stored as 0; ``missing_metrics``
+    # remembers which ones were blank (or had no column at all) so analysis
+    # can treat them as missing rather than as measured zeros.
     accepted = ~collector.rejected
     present_metrics = [name for name in REQUIRED_NUMERIC_FIELDS if name in work.columns]
+    absent_metrics = [name for name in REQUIRED_NUMERIC_FIELDS if name not in work.columns]
+    work["missing_metrics"] = ",".join(absent_metrics) or None
     if present_metrics:
         blanks = work.loc[accepted, present_metrics].isna()
         has_blank = blanks.any(axis=1).reindex(work.index, fill_value=False)
@@ -733,6 +738,9 @@ def validate(df: pd.DataFrame, *, current_year: Optional[int] = None) -> Validat
             + ", ".join(FIELD_LABELS[n] for n in present_metrics if blanks.at[i, n])
             + " recorded as 0.",
         )
+        for i in blanks.index[blanks.any(axis=1)]:
+            names = [n for n in REQUIRED_NUMERIC_FIELDS if n in absent_metrics or blanks.at[i, n]]
+            work.at[i, "missing_metrics"] = ",".join(names)
     for name in REQUIRED_NUMERIC_FIELDS:
         if name in work.columns:
             work[name] = work[name].fillna(0.0)
@@ -741,7 +749,7 @@ def validate(df: pd.DataFrame, *, current_year: Optional[int] = None) -> Validat
 
     clean = (
         work.loc[~collector.rejected]
-        .reindex(columns=["source_row", *COLUMN_ALIASES])
+        .reindex(columns=["source_row", *COLUMN_ALIASES, "missing_metrics"])
         .reset_index(drop=True)
     )
 

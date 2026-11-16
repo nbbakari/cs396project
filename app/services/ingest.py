@@ -37,6 +37,7 @@ from app.services.validation import (
     ValidationResult,
     as_date,
     as_float,
+    as_str,
     as_text,
     mark_already_stored,
     read_table,
@@ -337,6 +338,7 @@ def ingest(
                     pm_control=as_text(row.pm_control, "pm_control"),
                     hg_control=as_text(row.hg_control, "hg_control"),
                     program_code=as_text(row.program_code, "program_code"),
+                    missing_metrics=as_str(getattr(row, "missing_metrics", None)),
                 )
             )
             accepted += 1

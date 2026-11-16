@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% from "_macros.html" import val %}
+
+{% block title %}TRACI impact assessment &middot; epaData{% endblock %}
+{% block breadcrumb %}TRACI Impact Indicators{% endblock %}
+{% block phase_badge %}Phase 2: Data Analysis{% endblock %}
+{% block container_width %}1400px{% endblock %}
+
+{% macro pollutant(metric) -%}{{ {'co2_mass': 'CO₂', 'so2_mass': 'SO₂', 'nox_mass': 'NOx'}[metric] }}{%- endmacro %}
+
+{% block content %}
+{% set version = cats[0].version if cats else none %}
+<h1 class="h4 mb-1">TRACI impact assessment</h1>
+<p class="page-intro mb-2">
+  What the selected emissions could do to the environment and to health. Each pollutant's mass is
+  converted to kilograms and multiplied by EPA's TRACI factor for each effect it contributes to, such as
+  climate change, acid rain, fine particles and smog. Each effect is reported in its own
+  &ldquo;equivalent&rdquo; unit: the amount of a reference pollutant that would have the same effect.
+</p>
+<p class="small text-body-secondary mb-3"><strong>{{ disclaimer }}</strong></p>
+
+{% include "_analysis_nav.html" %}
+
+<form method="get" action="{{ url_for('analysis.impacts') }}" class="panel mb-3" id="impacts-form">
+  <div class="panel-title">Select records</div>
+  {% include "_analysis_filters.html" %}
+  <div class="row g-2 mt-2 align-items-end">
+    <div class="col-6 col-md-2">
+      <label class="form-label-sm" for="f-group_by">Totals by</label>
+      <select class="form-select form-select-sm" id="f-group_by" name="group_by">
+        {% for key, (column, label) in impact_groups.items() %}
+        <option value="{{ key }}"{{ ' selected' if options.group == key }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-12 col-md-4 col-xl-3">
+      <label class="form-label-sm" for="f-metric">Rank groups by</label>
+      <select class="form-select form-select-sm" id="f-metric" name="metric">
+        {% for cat in cats %}
+        <option value="{{ cat.name }}"{{ ' selected' if options.metric == cat.name }}>{{ cat.short_label }}: total</option>
+        <option value="{{ cat.intensity_name }}"{{ ' selected' if options.metric == cat.intensity_name }}>{{ cat.short_label }}: per MWh</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2 col-xl-1">
+      <label class="form-label-sm" for="f-version">TRACI version</label>
+      <select class="form-select form-select-sm" id="f-version" name="version">
+        {% for v in versions %}<option value="{{ v }}"{{ ' selected' if v == version }}>{{ v }}</option>{% endfor %}
+      </select>
+    </div>
+    <div class="col-6 col-md-2 col-xl-1">
+      <label class="form-label-sm" for="f-limit">Show</label>
+      <select class="form-select form-select-sm" id="f-limit" name="limit">
+        {% for n in limits %}<option value="{{ n }}"{{ ' selected' if options.limit == n }}>{{ n }}</option>{% endfor %}
+        <option value="all"{{ ' selected' if options.limit is none }}>All</option>
+      </select>
+    </div>
+    <div class="col-auto d-flex gap-2">
+      <button type="submit" class="btn btn-sm btn-primary px-3">Calculate impacts</button>
+      <a href="{{ url_for('analysis.impacts') }}" class="btn btn-sm btn-outline-secondary">Reset</a>
+    </div>
+  </div>
+</form>
+
+{% if errors %}
+<div class="alert alert-warning py-2">
+  {% for message in errors %}<div class="small">{{ message }}</div>{% endfor %}
+</div>
+{% endif %}
+
+{% if not cats %}
+<div class="alert alert-secondary">No TRACI factors are stored, so impacts cannot be calculated. Run <code>flask db upgrade</code>, or <code>flask traci load traci_2_2.xlsx</code>.</div>
+{% else %}
+
+{% include "_selection_cards.html" %}
+
+<div class="d-flex flex-wrap align-items-center gap-2 mb-2">
+  <h2 class="h5 mb-0 me-auto">Potential impacts <span class="small text-body-secondary fw-normal">EPA TRACI {{ version }}, emissions to air</span></h2>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('analysis.impacts_download', format='csv', limit=none) }}">CSV (every unit-year)</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('analysis.impacts_download', format='xlsx', limit=none) }}">Excel (totals, factors, method)</a>
+  <a class="btn btn-sm btn-outline-secondary" href="{{ url_for_query('api.traci_impacts') }}">JSON</a>
+</div>
+<div class="row row-cols-1 row-cols-md-2 row-cols-xl-4 g-3 mb-4" id="impact-cards">
+  {% for s in summary %}
+  <div class="col">
+    <div class="panel impact-card">
+      <div class="fw-semibold mb-1">{{ s.label }}</div>
+      <div class="impact-total">{{ val(s.total, 'big') }}</div>
+      <div class="impact-unit mb-2">{{ s.unit }}{% if s.intensity is not none %} &middot; {{ s.intensity | sig }} {{ s.intensity_unit }}{% endif %}</div>
+      {% if s.total %}
+      <div class="share-bar mb-1" role="img" aria-label="Contribution by pollutant: {% for p in s.pollutants %}{{ pollutant(p.campd_metric) }} {{ p.share_pct | num(1) }}%{{ ', ' if not loop.last }}{% endfor %}">
+        {% for p in s.pollutants %}<span class="pollutant-{{ p.campd_metric }}" style="width: {{ p.share_pct or 0 }}%"></span>{% endfor %}
+      </div>
+      <div class="small text-body-secondary mb-2">
+        {% for p in s.pollutants %}<span class="me-2 text-nowrap"><span class="share-key pollutant-{{ p.campd_metric }}"></span>{{ pollutant(p.campd_metric) }} {{ p.share_pct | num(1) }}%</span>{% endfor %}
+      </div>
+      {% endif %}
+      <div class="small text-body-secondary">
+        <span class="formula d-block mb-1 py-1 px-2">{{ s.formula }}</span>
+        {{ s.records_used | num }} unit-year(s) used{% if s.records_missing %}; {{ s.records_missing | num }} left out because {{ 'a pollutant was' if s.pollutants | length > 1 else 'the pollutant was' }} not reported{% endif %}.
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-xl-6">
+    <div class="panel h-100">
+      <div class="panel-title">How the numbers are calculated</div>
+      <ol class="method-steps small mb-0">
+        <li><strong>Filter the CAMPD records.</strong> {{ counts.records | num }} unit-year(s) match:
+          <pre class="query-text small mt-1 mb-0">{{ analysis.search.describe_filters() }}</pre></li>
+        <li><strong>Convert short tons to kilograms.</strong>
+          <span class="formula d-block mt-1">mass_kg = mass_short_tons × {{ short_ton_kg }}</span></li>
+        <li><strong>Match each pollutant to its TRACI air-emission factor (CF)</strong>, by exact name: CO₂ = CARBON DIOXIDE,
+          SO₂ = SULFUR DIOXIDE, NOx = NITROGEN OXIDES (not nitrogen dioxide, which TRACI lists separately).
+          <div class="table-wrap mt-1">
+            <table class="table table-sm table-data mb-0" id="factor-table">
+              <thead><tr><th scope="col">Pollutant</th><th scope="col">Impact category</th><th scope="col" class="num">CF</th><th scope="col">Unit</th></tr></thead>
+              <tbody>
+                {% for cat in cats %}{% for f in cat.factors %}
+                <tr><td>{{ pollutant(f.campd_metric) }} <span class="text-body-secondary">({{ f.pollutant_name | lower }})</span></td><td>{{ cat.label }}</td><td class="num">{{ f.value | sig(6, trim=true) }}</td><td>{{ f.unit }}</td></tr>
+                {% endfor %}{% endfor %}
+              </tbody>
+            </table>
+          </div></li>
+        <li><strong>Calculate each category separately.</strong>
+          <span class="formula d-block mt-1">Impact<sub>c</sub> = &Sigma; mass_kg<sub>i</sub> × CF<sub>i,c</sub></span>
+          Categories are never added together, because each has its own equivalent unit.</li>
+        <li><strong>Optional: impact per MWh</strong> = impact ÷ gross load (electricity generated). Missing when
+          the gross load is missing or 0.</li>
+      </ol>
+    </div>
+  </div>
+  <div class="col-xl-6">
+    <div class="panel h-100" id="worked-example">
+      <div class="panel-title">Check one record by hand</div>
+      {% if example %}
+      <p class="small mb-2">
+        The largest CO₂ emitter in the selection:
+        <a href="{{ url_for('main.unit_detail', unit_key=example.unit_key) }}">{{ example.facility_name }} ({{ example.state_code }}) unit {{ example.epa_unit_id }}</a>,
+        {{ example.reporting_year }}, gross load {{ val(example.gross_load, 'int') }} MWh.
+      </p>
+      <div class="table-wrap mb-2">
+        <table class="table table-sm table-data mb-0">
+          <thead><tr><th scope="col">Pollutant</th><th scope="col" class="num">Short tons</th><th scope="col" class="num">× {{ short_ton_kg }} = kg</th></tr></thead>
+          <tbody>
+            {% for metric, m in example.masses.items() %}
+            <tr><td>{{ pollutant(metric) }}</td><td class="num">{{ m.short_tons | num(3) }}</td><td class="num">{{ m.kg | num(0) }}</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% for step in example.steps %}
+      <div class="small mb-1">
+        <strong>{{ step.label }}:</strong>
+        {% for t in step.terms %}{{ t.kg | num(0) }} kg {{ t.pollutant }} × {{ t.factor | sig(6, trim=true) }}{{ ' + ' if not loop.last }}{% endfor %}
+        = <strong>{{ step.total | num(0) }} {{ step.unit }}</strong>{% if step.intensity is not none %} ({{ step.intensity | sig(4) }} {{ step.unit }}/MWh){% endif %}
+      </div>
+      {% endfor %}
+      {% else %}
+      <p class="small text-body-secondary mb-0">No unit-year in this selection reported CO₂, SO₂ and NOx, so there is no complete record to show.</p>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<h2 class="h5 mb-1">By {{ impact_groups[options.group][1] | lower }}</h2>
+<p class="small text-body-secondary mb-2">
+  {{ groups | length }} of {{ group_count | num }} shown, ranked by {{ (cats | selectattr('name', 'equalto', options.metric.replace('_per_mwh', '')) | first).short_label | lower }}{{ ' per MWh' if options.metric.endswith('_per_mwh') }}.
+  The number after each total is its rank in that category (1 = largest).
+</p>
+<div class="table-wrap mb-4">
+  <table class="table table-sm table-hover table-data wrap-head mb-0" id="impact-groups">
+    <thead>
+      <tr>
+        <th scope="col" rowspan="2">{{ impact_groups[options.group][1] }}</th>
+        <th scope="col" rowspan="2" class="num">Records</th>
+        <th scope="col" rowspan="2" class="num">Gross load<span class="th-hint">MWh</span></th>
+        {% for cat in cats %}<th scope="colgroup" colspan="2" class="text-center">{{ cat.short_label }}<span class="th-hint">{{ cat.label.split(' (', 1)[1].rstrip(')') if ' (' in cat.label }}</span></th>{% endfor %}
+      </tr>
+      <tr>
+        {% for cat in cats %}
+        <th scope="col" class="num{{ ' sorted' if options.metric == cat.name }}">Total<span class="th-hint">{{ cat.unit }}</span></th>
+        <th scope="col" class="num{{ ' sorted' if options.metric == cat.intensity_name }}">Per MWh</th>
+        {% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in groups %}
+      <tr>
+        <td class="fw-semibold">{% if options.group == 'facility' %}<a href="{{ url_for('main.facility_detail', facility_id=g.group) }}">{{ g.label }}</a>{% else %}{{ g.label }}{% endif %}</td>
+        <td class="num">{{ g.records | num }}</td>
+        <td class="num">{{ val(g.gross_load) }}</td>
+        {% for cat in cats %}
+        {% set i = g.impacts[cat.name] %}
+        <td class="num">{{ val(i.total, 'big') }}{% if i.rank %} <span class="small text-body-secondary">#{{ i.rank }}</span>{% endif %}</td>
+        <td class="num">{{ val(i.intensity, 'sig') }}</td>
+        {% endfor %}
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ 3 + 2 * (cats | length) }}" class="text-center text-body-secondary py-4">No records match these filters.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

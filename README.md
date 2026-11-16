@@ -28,6 +28,10 @@ Built for CS396 coursework.
 - [Validation rules](#validation-rules)
 - [Data model](#data-model)
 - [Units, assumptions and limitations](#units-assumptions-and-limitations)
+- [Phase 2: analytical data layer](#phase-2-analytical-data-layer)
+- [Phase 2: statistics, comparisons and TRACI impacts](#phase-2-statistics-comparisons-and-traci-impacts)
+- [AI assistant](#ai-assistant)
+- [Glossary](#glossary)
 - [JSON API](#json-api)
 - [Running the tests](#running-the-tests)
 - [Project structure](#project-structure)
@@ -39,7 +43,7 @@ Built for CS396 coursework.
 | Phase | Scope | Status |
 | --- | --- | --- |
 | **1. Data management** | Retrieval, upload, validation, storage, search, display, download | **Complete** |
-| 2. Evaluation | TRACI characterization factors, indicators, weighting scenarios, multi-indicator scoring | Planned |
+| 2. Analysis | Descriptive statistics, comparisons, visualization, TRACI impact indicators, prediction, sensitivity and scenario analysis | **In progress**: week 1 (TRACI 2.2 factors, missing values, derived indicators, [dataset builder](#phase-2-analytical-data-layer)) and week 2 ([descriptive statistics, comparisons and rankings, TRACI impact assessment](#phase-2-statistics-comparisons-and-traci-impacts)) done |
 
 ## Features
 
@@ -80,6 +84,9 @@ the **Data Retrieval** and **Upload** pages ([Loading data](#loading-data)).
 Use `flask run --port 5001` if port 5000 is taken (on macOS it is often used by
 AirPlay Receiver).
 
+To use the **Ask AI** panel, paste a free Gemini API key on the **Settings**
+page ([AI assistant](#ai-assistant)). Everything else works without it.
+
 ## Reproducing the results
 
 These steps need no CAMPD API key and no access to the team's shared
@@ -105,7 +112,7 @@ environment and an empty database.
 
    `.env` needs no changes for these steps. Its `SHARED_DATABASE_URL` line is
    a placeholder and is only used by the optional team features.
-3. **Run the automated tests.** `python -m pytest`. Expected: `94 passed`.
+3. **Run the automated tests.** `python -m pytest`. Expected: `215 passed`.
 4. **Start the app.** `flask run`, then open <http://127.0.0.1:5000/>. The
    database `data/epadata.db` is created on the first page load and starts
    empty.
@@ -182,6 +189,8 @@ Configuration is read from `.env` in the project root by `python-dotenv`.
 | `UPLOAD_FOLDER` | No | Where original files and API responses are kept. Default `data/uploads`. |
 | `MAX_UPLOAD_MB` | No | Upload size limit in MB. Default `32`. |
 | `CAMPD_API_BASE_URL` | No | Defaults to `https://api.epa.gov/easey`. |
+| `GEMINI_API_KEY` | For the AI assistant | Your Google Gemini API key. Usually set from the **Settings** page, which writes it here. |
+| `GEMINI_MODEL` | No | Gemini model for the AI assistant. Default `gemini-3.5-flash-lite`; change it if you hit a quota limit. |
 
 **Getting a CAMPD API key:** open **Data Retrieval** (or **Settings**) in the
 app. It links to the EPA's
@@ -245,6 +254,12 @@ then created from what that schema stored.
 | Dataset | `/dataset/<id>` | Provenance, counts, downloads, paginated data-quality report |
 | Downloads | `/downloads` | Search, selection, dataset, report and provenance downloads |
 | Settings | `/settings` | CAMPD API key (check, save, replace, remove), local database, loading shared data |
+| Data sources | `/data-sources` | Where the data comes from: CAMPD, the stored TRACI factors, imports by source type, every loaded dataset |
+| Coverage | `/coverage` | Facilities, units, records and states loaded; records per reporting year and the top 10 states by facilities (charts with titled axes) |
+| Descriptive statistics | `/analysis/statistics` | Phase 2: count, missing, mean, std dev, min, Q1, median, Q3, max, IQR (plus P5/P10/P90/P95, 95% CI, skewness, outliers) of every variable and TRACI impact; optionally by year, state, fuel or unit type; CSV/Excel/JSON |
+| Compare and rank | `/analysis/compare` | Phase 2: facilities, states, fuels, unit types or years on one variable: rank, percentile, z-score, absolute and % difference from a reference, Kruskal–Wallis test; CSV/Excel/JSON |
+| TRACI impact assessment | `/analysis/impacts` | Phase 2: potential impacts by TRACI category (kg CO₂/SO₂/PM2.5/O₃ eq, and per MWh), each pollutant's share, the method with factors, a record checked by hand, totals by state/fuel/unit type/year/facility; CSV/Excel/JSON |
+| Analytical dataset builder | `/analysis` | Phase 2: choose records (year range, state, facility, unit, fuel, unit type, controls, program, minimum operating time or gross load); counts of records, facilities, units, states and years; missing-value summary for every variable; variable definitions; preview with derived indicators and year-over-year change; CSV, Excel (with definitions) and saved-configuration downloads; the stored TRACI factors |
 
 ## Search reference
 
@@ -370,6 +385,8 @@ Dataset 1──* AnnualRecord *──1 Unit *──1 Facility
    ├──1 DataProvenance
    ├──1 UploadedFile
    └──* DataQualityIssue
+
+TraciFactor   (reference data: EPA TRACI factors for CO2, SO2, NOx to air)
 ```
 
 | Table | Purpose | Key constraints |
@@ -377,10 +394,11 @@ Dataset 1──* AnnualRecord *──1 Unit *──1 Facility
 | `datasets` | One import: name, source, reporting year, date, file name, raw/accepted counts, notes | |
 | `facilities` | EPA facility ID, name, state, county, latitude, longitude, source category | PK = EPA facility ID |
 | `units` | Internal key, facility, EPA unit ID, type, primary/secondary fuel, owner/operator, operating and retirement dates | unique (facility, EPA unit ID) |
-| `annual_records` | One unit-year: operating time, gross/steam load, heat input, CO₂/SO₂/NOₓ mass, SO₂/NOₓ/PM/Hg controls, program codes | unique (unit, year); CHECK non-negative, year range, hours ≤ 8,784 |
+| `annual_records` | One unit-year: operating time, gross/steam load, heat input, CO₂/SO₂/NOₓ mass, SO₂/NOₓ/PM/Hg controls, program codes, and `missing_metrics` (metrics that were blank in the source) | unique (unit, year); CHECK non-negative, year range, hours ≤ 8,784 |
 | `uploaded_files` | The file as received (or saved API response): stored name, size, SHA-256, status `staged`/`imported`/`discarded` | |
 | `data_provenance` | Per dataset: source, endpoint, query parameters, file hash, years, raw/accepted/rejected/warning counts | unique dataset |
 | `data_quality_issues` | Per problem row: source row, severity, type, field, message, raw keys, original row (JSON) | index (dataset, severity) |
+| `traci_factors` | TRACI version, pollutant name, CAS number, CAMPD column, medium, impact category, factor value and unit, source | unique (version, pollutant, medium, category) |
 
 Foreign keys cascade on delete. SQLite does not enforce foreign keys by
 default; the app turns enforcement on for every connection. Deleting a dataset
@@ -410,7 +428,9 @@ Downloads put the unit in each column name (e.g. `co2_mass_short_tons`).
 - A blank required metric is recorded as 0 and flagged. CAMPD leaves metrics
   blank for units that did not operate, and leaves CO₂/SO₂ blank for units
   that report only NOₓ (e.g. ozone-season programs); in those cases 0 means
-  "not reported", not "measured zero". The warning in the quality report marks them.
+  "not reported", not "measured zero". The warning in the quality report marks them,
+  and `annual_records.missing_metrics` lists them, so Phase 2 analysis treats
+  them as missing values rather than zeros.
 - A unit's type and fuels are those of the **latest** reporting year imported;
   per-year controls and program codes are kept on each annual record.
 - Facility-level totals sum the units' values for a year. Operating time is
@@ -432,6 +452,267 @@ Downloads put the unit in each column name (e.g. `co2_mass_short_tons`).
 - The shared database is a starting point, not a live sync: data a teammate
   adds locally reaches others only when it is pushed and they reload.
 
+## Phase 2: analytical data layer
+
+### TRACI characterization factors
+
+The `traci_factors` table holds EPA TRACI 2.2 factors, read from EPA's workbook
+[`traci_2_2.xlsx`](https://www.epa.gov/system/files/documents/2024-01/traci_2_2.xlsx)
+(updated 2022-03-02). Only air-emission factors that match a CAMPD pollutant
+**by exact TRACI substance name** are stored. NOx maps only to TRACI's
+`NITROGEN OXIDES`, never to `NITROGEN DIOXIDE` or `NITRIC OXIDE`. The
+migration seeds these six factors, so every database has them with no extra step:
+
+| CAMPD column | TRACI substance | Impact category (shown in the app as) | Factor | Unit |
+| --- | --- | --- | --- | --- |
+| `co2_mass` | CARBON DIOXIDE | Global Climate: *Global warming potential (climate change)* | 1 | kg CO2 eq / kg substance |
+| `so2_mass` | SULFUR DIOXIDE | Acidification: *Acidification (acid rain)* | 1 | kg SO2 eq / kg substance |
+| `so2_mass` | SULFUR DIOXIDE | HH Particulate: *Particulate matter formation (fine dust and soot that harm breathing)* | 0.0611 | PM2.5 eq / kg substance |
+| `nox_mass` | NITROGEN OXIDES | Acidification: *Acidification (acid rain)* | 0.7 | kg SO2 eq / kg substance |
+| `nox_mass` | NITROGEN OXIDES | HH Particulate: *Particulate matter formation (fine dust and soot that harm breathing)* | 0.00722 | PM2.5 eq / kg substance |
+| `nox_mass` | NITROGEN OXIDES | Photochemical Oxidation Formation: *Photochemical ozone formation (smog)* | 24.79 | kg O3 eq / kg substance |
+
+```bash
+flask traci load traci_2_2.xlsx   # re-import from EPA's workbook (re-running changes nothing)
+flask traci list                  # show the stored factors
+```
+
+### Missing values
+
+CAMPD leaves a metric blank when it was not reported. Phase 1 stores the blank
+as 0, because the column needs a number, and lists it in
+`annual_records.missing_metrics`. Existing records were flagged from their
+`defaulted_to_zero` warnings when the migration ran. The analysis layer
+(`app/services/analysis.py`) turns those zeros back into missing values. An
+indicator whose input is missing, or whose denominator is 0, is missing too.
+Nothing undefined is reported as 0. Without this, a unit-year with a blank CO₂
+but a real gross load (common for units that report only NOₓ) would show a CO₂
+intensity of 0 and rank as the cleanest unit.
+
+### Derived indicators
+
+| Indicator | Definition | Unit |
+| --- | --- | --- |
+| `co2_intensity`, `so2_intensity`, `nox_intensity` | mass ÷ gross load | short tons/MWh |
+| `heat_rate` | heat input ÷ gross load | MMBtu/MWh |
+| `operating_utilization` | operating time ÷ hours in the year (8,760; 8,784 in a leap year) | share of the year |
+| `average_load` | gross load ÷ operating time | MW |
+| `<variable>_change`, `<variable>_pct_change` | change from the previous calendar year of the same unit or facility (`yoy=`) | variable's unit, % |
+
+- **Facility level** (`level=facility`): rows add up their units' reported
+  values. `units_with_missing_values` counts the units that had a gap. Each
+  indicator uses only the units that reported both of its inputs.
+- **Year-over-year changes:** missing when the previous year has no record,
+  and the percentage change is also missing when the previous value is 0.
+  The previous year is loaded automatically even when a year filter
+  leaves it out.
+- **Capacity factor** is not calculated, because CAMPD annual data has no
+  nameplate capacity.
+
+The records in an analysis are chosen with the
+[explorer's URL parameters](#search-reference): year range, state, facility,
+unit, fuel, unit type, controls, program, and minimum operating time or gross
+load. So `/api/analysis/indicators?state=KY&primary_fuel=coal&year_min=2018&yoy=co2_mass`
+can always be re-run to get the same result.
+
+### Analytical dataset builder
+
+The **Analytical Dataset Builder** page (`/analysis`, in the sidebar under
+*Phase 2: Analysis*) puts all of this in the browser. Choose records with the
+filters above, then see:
+
+- how many records, facilities, units, states and years are selected
+- a missing-value summary for every variable, including how many indicator
+  values are undefined because the denominator is 0
+- the available variables with their definitions
+- a preview of the indicators, with optional year-over-year change
+
+The selection is part of the page address. **Save configuration** downloads it
+as a JSON file, and **Load configuration** rebuilds the same dataset from that
+file. **Download CSV** and **Excel** export every selected row. The Excel file
+has an *about* sheet listing the filters, the counts, the rule for missing
+values and the indicator definitions.
+
+## Phase 2: statistics, comparisons and TRACI impacts
+
+Week 2 adds three pages, linked by tabs to the dataset builder. All of them take
+the builder's record filters, so a selection moves between them unchanged and
+every result can be reproduced from its URL. Missing values are excluded and
+counted, never treated as 0.
+
+### Descriptive statistics (`/analysis/statistics`)
+
+`app/services/statistics.py` describes every numeric variable (measurements,
+derived indicators and TRACI impacts) at the unit-year or facility-year level:
+
+| Statistic | Definition |
+| --- | --- |
+| count, missing | values present, values not reported or undefined |
+| mean, std | average; **sample** standard deviation (n − 1) |
+| min, Q1, median, Q3, max | quartiles by linear interpolation (numpy/pandas `linear`, Excel `PERCENTILE.INC`) |
+| IQR | Q3 − Q1 |
+| P5, P10, P90, P95 | percentiles, same method |
+| SE, 95% CI | std / √n; mean ± t(0.975, n − 1) × SE (SciPy Student's t) |
+| skewness | adjusted Fisher–Pearson coefficient (SciPy, `bias=False`) |
+| outliers | values outside Q1 − 1.5 IQR … Q3 + 1.5 IQR (the box-plot rule) |
+
+`group_by` (year, state, primary_fuel, unit_type; year or state for facilities)
+gives the same statistics within each group.
+
+### Comparisons and rankings (`/analysis/compare`)
+
+Choose what to compare (`by`: state, primary_fuel, facility, unit_type, year) and
+on what (`metric`: any variable or TRACI impact). Each group's value is:
+
+- **totals** (mass, load, heat input, TRACI impacts): the sum of its unit-years;
+- **rates** (intensities, heat rate, impact per MWh): its total numerator ÷ total
+  denominator over unit-years that reported both, never the average of unit
+  rates, which would let a small unit count as much as a large one;
+- **operating time**: the average per unit-year.
+
+Each group gets a rank (1 = highest; ties share the best rank), a percentile (share
+of groups at or below it), a z-score, its share of the total (totals only) and its
+absolute and percentage difference from a reference: a group you choose
+(`baseline=OH`), or by default the average group (totals) or all selected records
+combined (rates). A **Kruskal–Wallis H test** (SciPy) on the unit-year values says
+whether the groups differ by more than chance, with the effect size ε² = H / (n − 1).
+Groups with fewer than 5 values are marked *small sample*.
+
+### TRACI assessment engine (`/analysis/impacts`)
+
+`app/services/impacts.py` turns the selected CAMPD records into potential impacts:
+
+1. filter the records (the builder's filters);
+2. convert short tons to kilograms: `mass_kg = mass_short_tons × 907.18474`;
+3. map each pollutant to its stored TRACI air-emission factor (exact names: CO₂ →
+   CARBON DIOXIDE, SO₂ → SULFUR DIOXIDE, NOx → NITROGEN OXIDES);
+4. `Impact_c = Σ_i mass_kg_i × CF_i,c` for each category c, kept separate:
+
+   | Category (shown as) | Unit | Formula (TRACI 2.2) |
+   | --- | --- | --- |
+   | Acidification (acid rain) | kg SO₂ eq | SO₂ kg × 1 + NOx kg × 0.7 |
+   | Global warming potential (climate change) | kg CO₂ eq | CO₂ kg × 1 |
+   | Particulate matter formation (fine dust and soot) | kg PM2.5 eq | SO₂ kg × 0.0611 + NOx kg × 0.00722 |
+   | Photochemical ozone formation (smog) | kg O₃ eq | NOx kg × 24.79 |
+
+5. optionally divide by gross load for the impact per MWh.
+
+A unit-year's impact in a category is calculated only when **every** pollutant
+the category uses was reported. A unit with NOx but no reported SO₂ has no
+acidification value, not an underestimate. The page says how many unit-years
+each category left out. The page also shows the factors and version used, each
+pollutant's share, a record worked through by hand, and totals ranked by state,
+fuel, unit type, year or facility. `version=` picks a stored TRACI version
+(latest by default). The CSV has one row per unit-year with the kg masses, every
+impact and the TRACI version. The Excel file adds the totals, the groups, the
+factors and an *about* sheet. These are potential impacts for comparing sources,
+not measured harm.
+
+## AI assistant
+
+The **Ask AI** tab on the right of every page opens a chat panel. You can:
+
+- **Ask about the data:** *"Top 10 CO₂ emitters in Ohio"*, *"Compare Ohio coal
+  CO₂ across the years"*, *"What is the average heat rate of gas units in
+  Texas?"*
+- **Ask about your screen:** *"What filters am I using?"*, *"Explain this
+  table"*, *"Which row has the highest CO₂ intensity here?"*
+- **Ask about your setup:** *"What data and settings do I have?"*, *"Is any
+  import waiting for review?"*
+- **Ask it to take you somewhere or change the view:** *"Open the dataset
+  builder for these units for 2019 to 2020"*, *"Sort this by NOx"*, *"Show me
+  the Gavin plant"*, *"Give me a CSV of this"*
+
+The conversation follows you from page to page, and **New chat** starts over.
+
+**How it works** (`app/services/assistant.py`):
+
+1. With each question the panel sends a snapshot of the page you are looking
+   at: the address, heading, filters, form values, number cards and the first
+   rows of each table. Password and hidden fields are never included.
+2. Google's Gemini model reads the question, the snapshot and a guide to the
+   site's pages, and calls these tools:
+
+   | Tool | What it does |
+   | --- | --- |
+   | `query_epa_database` | Totals and rankings by facility, state, unit or year, and year-over-year changes, with real SQL |
+   | `summarize_records` | Count, missing values, mean, median, standard deviation, quartiles, IQR, minimum and maximum of every measurement, derived indicator and TRACI impact, for any selection |
+   | `compare_and_rank` | Ranks states, fuels, facilities, unit types or years on any variable, with absolute and percent differences from a reference and a Kruskal–Wallis test |
+   | `assess_traci_impacts` | TRACI potential impacts (totals, per MWh, pollutant shares), optionally by group |
+   | `get_app_status` | What data is loaded, recent imports, files waiting for review, which keys and services are set up (yes or no only), and the TRACI factors |
+   | `navigate` | Opens a page with filters, or offers a download link. Only the site's own pages are allowed; deleting or posting forms is not. |
+
+3. Gemini explains the results in plain English. It is told never to invent
+   numbers. When it navigates, the page opens right after its answer.
+
+**It cannot change data.** For retrieving data from the EPA, uploading or
+approving a file, deleting a dataset, saving a key or loading shared data, it
+opens the right page, pre-filled where possible, and tells you which button to
+press. The Data Retrieval form accepts `?year=&state=&fuel_type=...`, so it can
+be pre-filled.
+
+For year comparisons, the tool itself calculates each year's absolute and
+percentage change. The model only quotes them, because language models are
+unreliable at arithmetic. Values that were blank in CAMPD are reported as
+"not reported", not as 0, as in the rest of Phase 2.
+
+**Setup on each computer:**
+
+1. `pip install -r requirements.txt`. This installs `google-genai`.
+2. Get a free key at <https://aistudio.google.com/apikey>.
+3. Paste the key on **Settings → Gemini API key**. The app checks it with Google
+   and saves it as `GEMINI_API_KEY` in `.env`.
+
+Without the package or a key, the panel says how to set it up, and the rest of
+the app is unaffected.
+
+**Limits and privacy:**
+
+- The free tier has a usage limit. When it is reached, the panel says so. You
+  can then set `GEMINI_MODEL` in `.env` to another model.
+- Questions, the page snapshot, and the database results used to answer them
+  are sent to Google.
+- An answer that needs several tool calls can take up to about half a minute.
+- AI answers can contain mistakes. Check important numbers in the Data Explorer.
+
+## Glossary
+
+The people reading this data may not be scientists, so the app writes every
+technical term followed by its everyday meaning, for example **Acidification
+(acid rain)** or **Gross load (electricity generated, MWh)**. Narrow table
+columns show the meaning on a small line under the heading. The wording comes
+from one place, `app/glossary.py`, and the AI assistant uses the same glossary
+when it explains results. CSV and Excel column names stay technical
+(`co2_mass_short_tons`) so other software can read them. The Excel export's
+*about* sheet gives each variable's everyday meaning.
+
+| Term | Everyday meaning |
+| --- | --- |
+| CO₂ | carbon dioxide, the main gas behind global warming |
+| SO₂ | sulfur dioxide, a gas that causes acid rain and harms breathing |
+| NOx | nitrogen oxides, gases that cause smog and acid rain |
+| Hg | mercury, a toxic metal |
+| PM | particulate matter: fine dust and soot |
+| Gross load | the electricity a unit generated |
+| Heat input | the energy in the fuel a unit burned |
+| Heat rate | fuel burned per MWh of electricity; lower means more efficient |
+| Emission intensity | pollution per MWh of electricity generated |
+| Operating utilization | the share of the year a unit was running |
+| Unit | one generator (boiler or turbine) at a power plant |
+| Facility | a power plant, which can have several units |
+| MWh | megawatt-hour, 1,000 kilowatt-hours of electricity |
+| MMBtu | million British thermal units, a measure of heat energy |
+| Short ton | 2,000 pounds (907 kg) |
+| Year-over-year change | the change from the year before |
+| Global warming potential | climate change |
+| Acidification | acid rain |
+| Particulate matter formation | fine dust and soot that harm breathing |
+| Photochemical ozone formation | smog |
+| Ozone depletion | thinning of the ozone layer |
+| Characterization factor | how strongly 1 kg of a pollutant adds to an impact |
+| CO₂-eq, SO₂-eq, O₃-eq, PM2.5-eq | 'equivalent': the amount of the reference pollutant that would have the same effect |
+| Potential impact | a comparison of possible harm, not measured damage to people or places |
+
 ## JSON API
 
 All responses are JSON, including errors (`{"error": ..., "detail": ...}`).
@@ -441,6 +722,13 @@ All responses are JSON, including errors (`{"error": ..., "detail": ...}`).
 | `GET /api/emissions/records` | Explorer search as JSON; accepts every [search parameter](#search-reference); `400` lists invalid parameters |
 | `GET /api/emissions/top-facilities?year=&limit=` | Facilities ranked by total CO₂ for one year (latest by default) |
 | `GET /api/emissions/years` | Reporting years with data, newest first |
+| `GET /api/analysis/summary` | For the selected records (explorer filters + `level`): counts of records, facilities, units, states and years; a missing-value summary per variable; and the variables available |
+| `GET /api/analysis/indicators` | Derived indicators for the selected records, with `level`, `yoy`, `sort`, `order`, `page`, `per_page` (≤ 1,000); missing values are `null`; includes indicator definitions |
+| `POST /api/ai/query` | AI assistant: `{"prompt": ..., "history": [...], "page": {...}}` → `{"response": ..., "actions": [...]}` (needs a Gemini key) |
+| `GET /api/traci/factors?version=` | Stored TRACI factors (latest version by default) |
+| `GET /api/analysis/statistics` | Descriptive statistics (explorer filters + `level`, `variables`, `group_by`) |
+| `GET /api/analysis/compare` | Group comparison and ranking (explorer filters + `by`, `metric`, `baseline`, `order`, `limit`), with the Kruskal–Wallis test |
+| `GET /api/traci/impacts` | TRACI impact assessment (explorer filters + `version`, `group_by`, `metric`, `limit`): totals, per MWh, pollutant shares, groups, a worked example |
 | `GET /api/emissions/interpret?q=` | Reads a plain-English description as search parameters; returns the parameters, how each phrase was read, unused words, and `explorer_url` / `records_url` for the same search |
 
 See `CONNECT.md` for response shapes and front-end integration notes.
@@ -451,11 +739,15 @@ See `CONNECT.md` for response shapes and front-end integration notes.
 pytest
 ```
 
-The suite (94 tests) runs against an in-memory SQLite database and a temporary
+The suite (215 tests) runs against an in-memory SQLite database and a temporary
 upload folder, and mocks the CAMPD API, so it needs no network or `.env`. It
 covers every validation rule, ingestion and re-import, database constraints,
 the search builder (filters, ranges, top-N, facility totals, group-and-rank,
-history), description-based search, the upload → review → approve/cancel
+history), description-based search, missing-value flags, derived indicators and
+year-over-year changes, the analytical dataset builder and its downloads,
+descriptive statistics, comparisons, rankings and the Kruskal–Wallis test, the
+TRACI impact calculation (checked by hand), the TRACI workbook reader and seed migration, the AI assistant's tools, navigation safety and
+error handling (with a fake Gemini client, so no key is needed), the upload → review → approve/cancel
 flow, retrieval, the API-key settings, a push/pull round trip through a shared
 database, every page, and every download.
 
@@ -465,22 +757,29 @@ database, every page, and every download.
 epaData/
 ├── app/
 │   ├── __init__.py          # app factory, SQLite foreign keys, blueprints
-│   ├── models.py            # SQLAlchemy models (7 tables)
-│   ├── cli.py               # flask campd ..., flask data ...
+│   ├── models.py            # SQLAlchemy models (8 tables)
+│   ├── glossary.py          # everyday meanings of technical terms
+│   ├── cli.py               # flask campd ..., flask data ..., flask traci ...
 │   ├── templating.py        # Jinja filters and URL helpers
 │   ├── routes/
-│   │   ├── main.py          # dashboard, explorer, compare, detail pages
+│   │   ├── main.py          # dashboard, explorer, compare, detail, data sources, coverage
 │   │   ├── retrieval.py     # CAMPD retrieval page
 │   │   ├── upload.py        # upload, review, approve, cancel
 │   │   ├── download.py      # downloads page and CSV/Excel exports
-│   │   ├── settings.py      # API key and shared-data settings
-│   │   └── api.py           # JSON endpoints
+│   │   ├── settings.py      # CAMPD and Gemini API keys, shared-data settings
+│   │   ├── analysis.py      # dataset builder, statistics, compare, TRACI impacts, downloads
+│   │   └── api.py           # JSON endpoints, including the AI assistant
 │   ├── services/
 │   │   ├── validation.py    # reading, column mapping, validation rules
 │   │   ├── ingest.py        # staging, import, provenance, enrichment
 │   │   ├── campd.py         # CAMPD API client
 │   │   ├── search.py        # explorer query builder
 │   │   ├── describe.py      # description-based search (plain English -> filters)
+│   │   ├── analysis.py      # analytical data layer: missing values, indicators, YoY
+│   │   ├── statistics.py    # descriptive statistics, comparisons, rankings (pandas/SciPy)
+│   │   ├── impacts.py       # TRACI assessment engine: kg, factors, impacts, per MWh
+│   │   ├── assistant.py     # AI assistant: Gemini plus the database tool it calls
+│   │   ├── traci.py         # EPA TRACI factor import
 │   │   ├── shared.py        # push to / pull from the shared database
 │   │   └── exports.py       # CSV / Excel responses
 │   ├── templates/           # Jinja templates (Bootstrap 5)
@@ -515,4 +814,5 @@ epaData/
 
 - U.S. EPA Clean Air Markets Program Data: <https://campd.epa.gov/>
   (API: <https://www.epa.gov/power-sector/cam-api-portal>)
-- Planned (Phase 2 and later): EPA TRACI, eGRID, NEI, WebFIRE / AP-42.
+- U.S. EPA TRACI 2.2 characterization factors: <https://www.epa.gov/chemical-research/tool-reduction-and-assessment-chemicals-and-other-environmental-impacts-traci>
+- Not used yet: eGRID, NEI, WebFIRE / AP-42.

@@ -56,6 +56,7 @@ def app(tmp_path):
             # Never touch the developer's real .env or shared database.
             "ENV_FILE": str(tmp_path / ".env"),
             "SHARED_DATABASE_URL": None,
+            "GEMINI_API_KEY": None,
         }
     )
     with app.app_context():

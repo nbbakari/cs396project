@@ -1,45 +1,82 @@
 {% extends "base.html" %}
-{% block title %}Data Sources | epaData{% endblock %}
+{% block title %}Data sources &middot; epaData{% endblock %}
 {% block breadcrumb %}Data Sources{% endblock %}
-{% block content %}
-<h1 class="h3 mb-2">Data Sources</h1>
-<p class="text-muted mb-4">Where the data in this system comes from and how it is retrieved.</p>
 
-<div class="card mb-4"><div class="card-body">
-  <h5 class="card-title">EPA Clean Air Markets Program Data (CAMPD)</h5>
-  <p class="mb-2">Emissions, operating and compliance data for regulated power plants, published by the U.S. EPA.</p>
-  <ul class="mb-3">
-    <li><strong>Access:</strong> CAMPD API and bulk data downloads (API key held server-side only)</li>
-    <li><strong>Granularity used:</strong> annual, unit-level records</li>
-    <li><strong>Measures:</strong> operating time, gross/steam load, heat input, CO₂, SO₂ and NOₓ mass, control equipment</li>
-  </ul>
-  <a class="btn btn-sm btn-outline-success" href="https://campd.epa.gov" target="_blank" rel="noopener">campd.epa.gov</a>
-</div></div>
+{% block content %}
+<h1 class="h4 mb-1">Data sources</h1>
+<p class="page-intro mb-3">Where the data in this system comes from and how it is retrieved.</p>
+
+<div class="row g-3 mb-4">
+  <div class="col-lg-7">
+    <div class="panel h-100" id="source-campd">
+      <div class="panel-title">EPA Clean Air Markets Program Data (CAMPD)</div>
+      <p class="mb-2">Emissions, operating and compliance data for regulated power plants, published by the U.S. Environmental Protection Agency.</p>
+      <ul class="small mb-3">
+        <li><strong>Access:</strong> the CAMPD API and bulk-data downloads; the API key is kept on the server only.</li>
+        <li><strong>Granularity used:</strong> annual records, one per unit (boiler or turbine) per reporting year.</li>
+        <li><strong>Measures:</strong>
+          operating time ({{ meaning('operating_time') }}),
+          gross load ({{ meaning('gross_load') }}) and steam load ({{ meaning('steam_load') }}),
+          heat input ({{ meaning('heat_input') }}),
+          CO₂ ({{ meaning('co2_mass') }}), SO₂ ({{ meaning('so2_mass') }}) and NOx ({{ meaning('nox_mass') }}) mass in short tons,
+          and control equipment (pollution-removal equipment).</li>
+      </ul>
+      <a class="btn btn-sm btn-outline-secondary" href="https://campd.epa.gov" target="_blank" rel="noopener">campd.epa.gov</a>
+    </div>
+  </div>
+  <div class="col-lg-5">
+    <div class="panel h-100" id="source-traci">
+      <div class="panel-title">EPA TRACI characterization factors</div>
+      <p class="mb-2">
+        TRACI (Tool for the Reduction and Assessment of Chemical and other environmental Impacts) gives
+        each pollutant's characterization factor: how strongly 1&nbsp;kg of it adds to an impact such as
+        acidification (acid rain) or climate change.
+      </p>
+      <ul class="small mb-3">
+        {% if traci_version %}
+        <li><strong>Stored:</strong> TRACI {{ traci_version }}, {{ traci_count }} factors for CO₂, SO₂ and NOx emitted to air.</li>
+        {% else %}
+        <li><strong>Stored:</strong> none yet; run <code>flask db upgrade</code>.</li>
+        {% endif %}
+        <li><strong>Used for:</strong> the <a href="{{ url_for('analysis.impacts') }}">TRACI impact indicators</a>.</li>
+      </ul>
+      <a class="btn btn-sm btn-outline-secondary" href="{{ traci_url }}" rel="noopener">traci_2_2.xlsx (EPA)</a>
+    </div>
+  </div>
+</div>
 
 {% if source_counts %}
-<h2 class="h5">Imports by source type</h2>
-<div class="d-flex flex-wrap gap-2 mb-4">
+<h2 class="h5 mb-2">Imports by source type</h2>
+<div class="d-flex flex-wrap gap-2 mb-4" id="source-counts">
   {% for source_type, count in source_counts.items() %}
-    <span class="badge text-bg-light border">{{ source_type }}: {{ count }}</span>
+  <span class="badge text-bg-light border">{{ {'api': 'CAMPD API', 'upload': 'File upload'}.get(source_type, source_type) }}: {{ count | num }}</span>
   {% endfor %}
 </div>
 {% endif %}
 
-<h2 class="h5">Loaded datasets</h2>
-<div class="table-responsive">
-  <table class="table table-striped align-middle">
+<h2 class="h5 mb-2">Loaded datasets</h2>
+<div class="table-wrap">
+  <table class="table table-sm table-data mb-0" id="datasets-table">
     <thead>
-      <tr><th>Dataset</th><th class="text-end">Accepted records</th><th>Retrieved</th></tr>
+      <tr>
+        <th scope="col">Dataset</th>
+        <th scope="col">Source</th>
+        <th scope="col" class="num">Reporting year</th>
+        <th scope="col" class="num">Accepted records</th>
+        <th scope="col">Retrieved</th>
+      </tr>
     </thead>
     <tbody>
     {% for d in datasets %}
       <tr>
         <td><a href="{{ url_for('main.dataset_detail', dataset_id=d.id) }}">{{ d.dataset_name }}</a></td>
-        <td class="text-end">{{ "{:,}".format(d.accepted_records or 0) }}</td>
-        <td>{{ d.retrieval_date.strftime('%Y-%m-%d %H:%M') if d.retrieval_date else "n/a" }}</td>
+        <td class="small">{{ d.data_source }}</td>
+        <td class="num">{{ d.reporting_year or '' }}</td>
+        <td class="num">{{ (d.accepted_records or 0) | num }}</td>
+        <td class="small">{{ d.retrieval_date | when if d.retrieval_date else 'n/a' }}</td>
       </tr>
     {% else %}
-      <tr><td colspan="3" class="text-center text-muted py-4">No datasets loaded yet.</td></tr>
+      <tr><td colspan="5" class="text-center text-body-secondary py-4">No datasets loaded yet.</td></tr>
     {% endfor %}
     </tbody>
   </table>

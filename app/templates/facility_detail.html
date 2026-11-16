@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_macros.html" import th_hint %}
 
 {% block title %}{{ facility.facility_name }} &middot; epaData{% endblock %}
 {% block breadcrumb %}Facility &rsaquo; {{ facility.facility_name }}{% endblock %}
@@ -67,9 +68,9 @@
   <table class="table table-sm table-data">
     <thead>
       <tr>
-        <th>Year</th><th class="num">Units reporting</th><th class="num">Gross load (MWh)</th>
-        <th class="num">Heat input (MMBtu)</th><th class="num">CO₂ (tons)</th>
-        <th class="num">SO₂ (tons)</th><th class="num">NOx (tons)</th>
+        <th>Year</th><th class="num">Units reporting</th><th class="num">Gross load (MWh){{ th_hint('gross_load') }}</th>
+        <th class="num">Heat input (MMBtu){{ th_hint('heat_input') }}</th><th class="num">CO₂ (tons){{ th_hint('co2_mass') }}</th>
+        <th class="num">SO₂ (tons){{ th_hint('so2_mass') }}</th><th class="num">NOx (tons){{ th_hint('nox_mass') }}</th>
       </tr>
     </thead>
     <tbody>

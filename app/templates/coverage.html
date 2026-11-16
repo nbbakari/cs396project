@@ -1,45 +1,48 @@
 {% extends "base.html" %}
-{% block title %}Coverage | epaData{% endblock %}
-{% block breadcrumb %}Coverage{% endblock %}
-
-{% block head %}
-<style>
-  .stat-card { border: 0; border-left: 4px solid #198754; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-  .stat-card .stat-value { font-size: 1.8rem; font-weight: 700; }
-  .chart-wrap { position: relative; height: 320px; }
-</style>
-{% endblock %}
+{% block title %}Coverage &middot; epaData{% endblock %}
+{% block breadcrumb %}Coverage Dashboard{% endblock %}
 
 {% block content %}
-<h1 class="h3 mb-4">Current Coverage</h1>
+<h1 class="h4 mb-1">Coverage</h1>
+<p class="page-intro mb-3">
+  How much data is loaded: the power plants, units and years the database holds, and where they are.
+</p>
 
-<div class="row g-3 mb-4">
-  {% for label, value in [('Facilities', stats.facility_count), ('Units', stats.unit_count), ('Annual records', stats.record_count), ('States', stats.state_count)] %}
-  <div class="col-6 col-lg-3">
-    <div class="card stat-card h-100"><div class="card-body">
-      <div class="text-muted text-uppercase small">{{ label }}</div>
-      <div class="stat-value">{{ "{:,}".format(value) }}</div>
-    </div></div>
-  </div>
+<div class="row row-cols-2 row-cols-lg-4 g-3 mb-3" id="coverage-cards">
+  {% for label, value, sub in [
+    ('Facilities', stats.facility_count, 'power plants'),
+    ('Units', stats.unit_count, 'boilers and turbines'),
+    ('Annual records', stats.record_count, 'one per unit per reporting year'),
+    ('States', stats.state_count, 'with at least one facility'),
+  ] %}
+  <div class="col"><div class="stat-panel">
+    <div class="stat-label">{{ label }}</div>
+    <div class="stat-value">{{ value | num }}</div>
+    <div class="stat-sub">{{ sub }}</div>
+  </div></div>
   {% endfor %}
 </div>
 
 {% if stats.record_count == 0 %}
-  <div class="alert alert-info">No data loaded yet. Once records are ingested, coverage charts will appear here.</div>
+<div class="alert alert-info">No data is loaded yet. Once records are imported, coverage charts appear here.</div>
 {% else %}
-<p class="text-muted">Reporting years covered: {{ stats.year_min }}&ndash;{{ stats.year_max }}</p>
+<p class="small text-body-secondary">Reporting years covered: {{ stats.year_min }}&ndash;{{ stats.year_max }} ({{ by_year | length }} year{{ 's' if by_year | length != 1 }} with data).</p>
 <div class="row g-3">
   <div class="col-12 col-xl-6">
-    <div class="card h-100"><div class="card-body">
-      <h5 class="card-title">Records by reporting year</h5>
-      <div class="chart-wrap"><canvas id="yearChart"></canvas></div>
-    </div></div>
+    <div class="panel h-100">
+      <div class="panel-title">Annual records by reporting year</div>
+      <div class="chart-box" style="height: 320px">
+        <canvas id="yearChart" role="img" aria-label="Number of annual records for each reporting year"></canvas>
+      </div>
+    </div>
   </div>
   <div class="col-12 col-xl-6">
-    <div class="card h-100"><div class="card-body">
-      <h5 class="card-title">Top 10 states by facilities</h5>
-      <div class="chart-wrap"><canvas id="stateChart"></canvas></div>
-    </div></div>
+    <div class="panel h-100">
+      <div class="panel-title">Top 10 states by number of facilities</div>
+      <div class="chart-box" style="height: 320px">
+        <canvas id="stateChart" role="img" aria-label="The ten states with the most facilities"></canvas>
+      </div>
+    </div>
   </div>
 </div>
 {% endif %}
@@ -48,19 +51,27 @@
 {% block scripts %}
 {% if stats.record_count > 0 %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/charts.js') }}"></script>
+<script id="coverage-data" type="application/json">{{ {'by_year': by_year, 'by_state': by_state} | tojson }}</script>
 <script>
-  const byYear = {{ by_year | tojson }};
-  const byState = {{ by_state | tojson }};
-  new Chart(document.getElementById('yearChart'), {
-    type: 'bar',
-    data: { labels: byYear.map(r => r.year), datasets: [{ label: 'Records', data: byYear.map(r => r.count), backgroundColor: '#198754' }] },
-    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-  });
-  new Chart(document.getElementById('stateChart'), {
-    type: 'bar',
-    data: { labels: byState.map(r => r.state), datasets: [{ label: 'Facilities', data: byState.map(r => r.count), backgroundColor: '#0f3d2a' }] },
-    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
-  });
+  (function () {
+    if (!window.EpaCharts) return;
+    const data = JSON.parse(document.getElementById("coverage-data").textContent);
+    window.EpaCharts.barChart(
+      document.getElementById("yearChart"),
+      data.by_year.map((r) => String(r.year)),
+      data.by_year.map((r) => r.count),
+      { vertical: true, label: "Annual records", unit: "records",
+        xTitle: "Reporting year", yTitle: "Annual records (unit-years)" }
+    );
+    window.EpaCharts.barChart(
+      document.getElementById("stateChart"),
+      data.by_state.map((r) => r.state),
+      data.by_state.map((r) => r.count),
+      { label: "Facilities", unit: "facilities",
+        xTitle: "Facilities (power plants)", yTitle: "State" }
+    );
+  })();
 </script>
 {% endif %}
 {% endblock %}

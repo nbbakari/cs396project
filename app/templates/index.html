@@ -123,10 +123,12 @@
       <p class="small text-body-secondary mb-2">
         Annual, unit-level operating and emissions data reported by power-sector
         units under the Acid Rain Program (since 1995) and related programs:
-        operating time (hours), gross load (MWh), steam load (1000&nbsp;lb),
-        heat input (MMBtu), and CO<sub>2</sub>, SO<sub>2</sub> and NO<sub>x</sub>
-        mass (short tons), with fuel types, control technologies, program codes
-        and facility location.
+        operating time (hours running), gross load (electricity generated, MWh),
+        steam load (steam produced, 1000&nbsp;lb), heat input (energy in the fuel
+        burned, MMBtu), and the mass of CO<sub>2</sub> (carbon dioxide),
+        SO<sub>2</sub> (sulfur dioxide) and NO<sub>x</sub> (nitrogen oxides) in
+        short tons, with fuel types, control technologies (pollution-removal
+        equipment), program codes and facility location.
       </p>
       <p class="small mb-0">
         {{ source_counts.get('api', 0) }} API retrieval(s) &middot;

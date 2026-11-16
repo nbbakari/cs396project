@@ -39,8 +39,24 @@ def _merged(*lists: list[str]) -> list[str]:
     return sorted(seen, key=str.lower)
 
 
-def _render_form(form: dict[str, str], status: int = 200):
+def _options() -> dict[str, list[str]]:
+    """The choices offered in the form's drop-down lists."""
     choices = filter_choices()
+    return {
+        "fuel_type": _merged(FUEL_TYPES, choices["primary_fuels"]),
+        "unit_type": _merged(UNIT_TYPES, choices["unit_types"]),
+        "control_technology": _merged(
+            CONTROL_TECHNOLOGIES,
+            choices["so2_controls"],
+            choices["nox_controls"],
+            choices["pm_controls"],
+            choices["hg_controls"],
+        ),
+    }
+
+
+def _render_form(form: dict[str, str], status: int = 200):
+    options = _options()
     history = db.session.execute(
         select(Dataset, DataProvenance)
         .join(DataProvenance, DataProvenance.dataset_id == Dataset.id)
@@ -58,15 +74,9 @@ def _render_form(form: dict[str, str], status: int = 200):
             "retrieval.html",
             form=form,
             states=STATES,
-            fuel_types=_merged(FUEL_TYPES, choices["primary_fuels"]),
-            unit_types=_merged(UNIT_TYPES, choices["unit_types"]),
-            controls=_merged(
-                CONTROL_TECHNOLOGIES,
-                choices["so2_controls"],
-                choices["nox_controls"],
-                choices["pm_controls"],
-                choices["hg_controls"],
-            ),
+            fuel_types=options["fuel_type"],
+            unit_types=options["unit_type"],
+            controls=options["control_technology"],
             first_year=FIRST_REPORTING_YEAR,
             last_year=date.today().year,
             history=history,
@@ -77,9 +87,26 @@ def _render_form(form: dict[str, str], status: int = 200):
     )
 
 
+# Filters a link (or the AI assistant) may fill in; the user still presses Retrieve.
+PREFILL_FIELDS = ("year", "state", "facility_ids", "fuel_type", "unit_type",
+                  "control_technology", "dataset_name")
+
+
 @retrieval_bp.route("/retrieve", methods=["GET"])
 def retrieval_form():
-    return _render_form({"year": str(date.today().year - 1), "attributes": "on"})
+    form = {"year": str(date.today().year - 1), "attributes": "on"}
+    options = _options()
+    for name in PREFILL_FIELDS:
+        value = (request.args.get(name) or "").strip()[:150]
+        if not value:
+            continue
+        if name == "state":
+            value = value.upper()
+        elif name in options:  # match a drop-down choice regardless of case
+            value = next((o for o in options[name] if o.lower() == value.lower()), "")
+        if value:
+            form[name] = value
+    return _render_form(form)
 
 
 @retrieval_bp.route("/retrieve", methods=["POST"])

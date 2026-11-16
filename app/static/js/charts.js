@@ -95,9 +95,17 @@
     });
   }
 
-  /** Horizontal bar chart of one series (slot 1), largest first. */
+  /**
+   * Bar chart of one series (slot 1). Horizontal by default (largest first);
+   * options.vertical draws columns, e.g. one per year. options.xTitle and
+   * options.yTitle name the axes, with units.
+   */
   function barChart(canvas, labels, values, options) {
     const opts = options || {};
+    const vertical = Boolean(opts.vertical);
+    const category = { grid: { display: false }, border: { color: INK.grid }, ticks: { color: INK.primary } };
+    const categoryTitle = vertical ? opts.xTitle : opts.yTitle;
+    if (categoryTitle) category.title = { display: true, text: categoryTitle, color: INK.secondary };
     return new Chart(canvas, {
       type: "bar",
       data: {
@@ -114,14 +122,13 @@
         }],
       },
       options: {
-        indexAxis: "y",
+        indexAxis: vertical ? "x" : "y",
         maintainAspectRatio: false,
         onClick: opts.onClick,
         plugins: { legend: { display: false }, tooltip: tooltip(opts.unit) },
-        scales: {
-          x: axis(opts.xTitle),
-          y: { grid: { display: false }, border: { color: INK.grid }, ticks: { color: INK.primary } },
-        },
+        scales: vertical
+          ? { x: category, y: axis(opts.yTitle) }
+          : { x: axis(opts.xTitle), y: category },
       },
     });
   }

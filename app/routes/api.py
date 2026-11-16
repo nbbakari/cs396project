@@ -1,9 +1,15 @@
-"""API routes for epaData data retrieval and AI natural language search."""
+"""JSON endpoints backing the dashboard's charts and data explorer, the
+Phase 2 analysis pages, and the AI assistant panel.
 
-import logging
-import os
-import time
-from decimal import Decimal
+Views here return JSON only -- no templates -- so the front end can fetch them
+directly. Every response is a JSON document, including errors, so a failed
+request never hands the browser an HTML error page to parse.
+"""
+
+from __future__ import annotations
+
+import math
+from datetime import datetime, timezone
 from typing import Optional
 
 from flask import Blueprint, current_app, jsonify, request, url_for
@@ -12,303 +18,165 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from app import db
 from app.models import AnnualRecord, Facility, Unit
+from app.services.analysis import (
+    add_indicators,
+    analysis_frame,
+    dataset_counts,
+    facility_frame,
+    json_records,
+    load_units,
+    missing_summary,
+    numeric_variables,
+    parse_analysis,
+    variables,
+)
+from app.services.assistant import MAX_PROMPT_LENGTH, AssistantError, ask
 from app.services.describe import MAX_LENGTH, interpret
 from app.services.search import parse_search, run_search
+from app.services.impacts import (
+    DISCLAIMER,
+    SHORT_TON_KG,
+    grouped_impacts,
+    impact_summary,
+    parse_impact_options,
+    sorted_groups,
+    worked_example,
+)
+from app.services.statistics import (
+    STATISTICS,
+    all_variables,
+    compare_groups,
+    describe,
+    describe_grouped,
+    level_frame,
+    load_selection,
+    parse_compare_options,
+    parse_statistics_options,
+    shown_groups,
+)
+from app.services.traci import CATEGORY_LABELS, factors_for, versions
 
 api_bp = Blueprint("api", __name__, url_prefix="/api")
 ai_bp = Blueprint("ai", __name__, url_prefix="/api/ai")
 
-logger = logging.getLogger(__name__)
-
-# Change the model here, or set GEMINI_MODEL in .env, if you hit a quota limit.
-AI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite")
-
-# Measurements the AI may rank or total by (columns of annual_records).
-METRICS = ("co2_mass", "so2_mass", "nox_mass", "gross_load", "heat_input")
-LEVELS = ("facility", "state", "unit", "year")
-
-AI_SYSTEM_INSTRUCTION = (
-    "You are an assistant for epaData, an explorer of EPA power-plant emissions data. "
-    "The data holds one record per unit per reporting year, with CO2, SO2 and NOx mass "
-    "(tons), gross load (MWh) and heat input (MMBtu). Each unit belongs to a facility in "
-    "a state and has a primary fuel such as coal or natural gas. "
-    "Rules: "
-    "1. Always call `query_epa_database` before answering and never invent numbers. "
-    "Use the `stats` and `rows` values exactly as returned; do not recalculate them. "
-    "2. Choose `level` to match the question: 'facility' for top plants, 'state' for "
-    "which states, 'unit' for individual units, and 'year' to compare or show a trend "
-    "across years. To compare years, make ONE call with level='year' and year_min and "
-    "year_max (or no year filter), instead of one call per year. "
-    "3. Put fuel in primary_fuel (for example 'coal' or 'gas'), the state as a "
-    "two-letter code, and the reporting year in `year`. "
-    "4. Explain the results in plain English with the takeaway first. Mention totals, "
-    "the highest and lowest values, and for comparisons give each value, the absolute "
-    "change and the percent change. "
-    "5. If status is 'no_records', say nothing matched and suggest a different search. "
-    "If status is 'error', say the lookup failed and what was being searched."
-)
+DEFAULT_LIMIT = 10
+MAX_LIMIT = 100
+ANALYSIS_PER_PAGE = 100
+ANALYSIS_MAX_PER_PAGE = 1000
 
 
-def _clean(value):
-    """Make a database value JSON friendly."""
-    if isinstance(value, Decimal):
-        return float(value)
-    return value
-
-
-def _tables():
-    tables = db.metadata.tables
-    return tables["facilities"], tables["units"], AnnualRecord.__table__
-
-
-def run_emissions_query(
-    year: Optional[int] = None,
-    year_min: Optional[int] = None,
-    year_max: Optional[int] = None,
-    state: Optional[str] = None,
-    facility_name: Optional[str] = None,
-    primary_fuel: Optional[str] = None,
-    county: Optional[str] = None,
-    unit_type: Optional[str] = None,
-    level: str = "facility",
-    rank_by: str = "co2_mass",
-    order: str = "desc",
-    limit: int = 10,
-) -> dict:
-    """Search annual emissions with real SQL and return stats plus ranked rows."""
-    facilities, units, records = _tables()
-
-    level = level if level in LEVELS else "facility"
-    rank_by = rank_by if rank_by in METRICS else "co2_mass"
-    limit = max(1, min(int(limit or 10), 50))
-    descending = (order or "desc").lower() != "asc"
-
-    source = records.join(
-        units, records.c.unit_id == units.c.internal_unit_key
-    ).join(facilities, units.c.facility_id == facilities.c.epa_facility_id)
-
-    conditions = []
-    filters = {}
-    if year:
-        conditions.append(records.c.reporting_year == int(year))
-        filters["year"] = int(year)
-    if year_min:
-        conditions.append(records.c.reporting_year >= int(year_min))
-        filters["year_min"] = int(year_min)
-    if year_max:
-        conditions.append(records.c.reporting_year <= int(year_max))
-        filters["year_max"] = int(year_max)
-    if state:
-        codes = [s.strip().upper() for s in state.split(",") if s.strip()]
-        if codes:
-            conditions.append(func.upper(facilities.c.state_code).in_(codes))
-            filters["state"] = ",".join(codes)
-    if facility_name:
-        conditions.append(facilities.c.facility_name.ilike(f"%{facility_name.strip()}%"))
-        filters["facility_name"] = facility_name
-    if primary_fuel:
-        conditions.append(units.c.primary_fuel.ilike(f"%{primary_fuel.strip()}%"))
-        filters["primary_fuel"] = primary_fuel
-    if county:
-        conditions.append(facilities.c.county.ilike(f"%{county.strip()}%"))
-        filters["county"] = county
-    if unit_type:
-        conditions.append(units.c.unit_type.ilike(f"%{unit_type.strip()}%"))
-        filters["unit_type"] = unit_type
-
-    # Statistics over ALL matching unit-year records (not just the rows shown).
-    s = db.session.execute(
-        select(
-            func.count(records.c.id),
-            func.count(distinct(units.c.internal_unit_key)),
-            func.count(distinct(facilities.c.epa_facility_id)),
-            func.sum(records.c.co2_mass),
-            func.sum(records.c.so2_mass),
-            func.sum(records.c.nox_mass),
-            func.sum(records.c.gross_load),
-            func.sum(records.c.heat_input),
-            func.avg(records.c.co2_mass),
-            func.max(records.c.co2_mass),
-            func.min(records.c.co2_mass),
-        )
-        .select_from(source)
-        .where(*conditions)
-    ).one()
-
-    if not s[0]:
-        return {"status": "no_records", "filters": filters}
-
-    stats = {
-        "record_count": int(s[0]),
-        "unit_count": int(s[1]),
-        "facility_count": int(s[2]),
-        "co2_mass_total": float(s[3] or 0),
-        "so2_mass_total": float(s[4] or 0),
-        "nox_mass_total": float(s[5] or 0),
-        "gross_load_total": float(s[6] or 0),
-        "heat_input_total": float(s[7] or 0),
-        "co2_mass_average_per_unit_year": float(s[8] or 0),
-        "co2_mass_max_unit_year": float(s[9] or 0),
-        "co2_mass_min_unit_year": float(s[10] or 0),
-    }
-
-    totals = {
-        name: func.coalesce(func.sum(records.c[name]), 0).label(name)
-        for name in METRICS
-    }
-    direction = (lambda col: col.desc()) if descending else (lambda col: col.asc())
-
-    if level == "facility":
-        stmt = (
-            select(
-                facilities.c.epa_facility_id,
-                facilities.c.facility_name,
-                facilities.c.state_code,
-                *totals.values(),
-            )
-            .select_from(source)
-            .where(*conditions)
-            .group_by(
-                facilities.c.epa_facility_id,
-                facilities.c.facility_name,
-                facilities.c.state_code,
-            )
-            .order_by(direction(totals[rank_by]))
-            .limit(limit)
-        )
-    elif level == "state":
-        stmt = (
-            select(
-                facilities.c.state_code,
-                func.count(distinct(facilities.c.epa_facility_id)).label("facility_count"),
-                *totals.values(),
-            )
-            .select_from(source)
-            .where(*conditions)
-            .group_by(facilities.c.state_code)
-            .order_by(direction(totals[rank_by]))
-            .limit(limit)
-        )
-    elif level == "year":
-        stmt = (
-            select(
-                records.c.reporting_year,
-                func.count(distinct(facilities.c.epa_facility_id)).label("facility_count"),
-                *totals.values(),
-            )
-            .select_from(source)
-            .where(*conditions)
-            .group_by(records.c.reporting_year)
-            .order_by(records.c.reporting_year.asc())
-        )
-    else:  # unit
-        metric_col = records.c[rank_by]
-        stmt = (
-            select(
-                facilities.c.facility_name,
-                facilities.c.state_code,
-                units.c.epa_unit_id,
-                units.c.unit_type,
-                units.c.primary_fuel,
-                records.c.reporting_year,
-                records.c.co2_mass,
-                records.c.so2_mass,
-                records.c.nox_mass,
-                records.c.gross_load,
-                records.c.heat_input,
-                records.c.operating_time,
-            )
-            .select_from(source)
-            .where(*conditions)
-            .order_by(direction(metric_col).nulls_last())
-            .limit(limit)
-        )
-
-    rows = [
-        {k: _clean(v) for k, v in row._mapping.items()}
-        for row in db.session.execute(stmt).all()
-    ]
-
-    return {
-        "status": "success",
-        "filters": filters,
-        "level": level,
-        "ranked_by": rank_by,
-        "stats": stats,
-        "rows": rows,
-    }
-
-
-def query_epa_database(
-    year: Optional[int] = None,
-    year_min: Optional[int] = None,
-    year_max: Optional[int] = None,
-    state: Optional[str] = None,
-    facility_name: Optional[str] = None,
-    primary_fuel: Optional[str] = None,
-    county: Optional[str] = None,
-    unit_type: Optional[str] = None,
-    level: str = "facility",
-    rank_by: str = "co2_mass",
-    order: str = "desc",
-    limit: int = 10,
-) -> dict:
-    """Search EPA annual emissions records and return statistics and ranked rows.
-
-    Args:
-        year: A single reporting year, e.g. 2022.
-        year_min: First reporting year of a range (inclusive).
-        year_max: Last reporting year of a range (inclusive).
-        state: Two-letter state code, or several separated by commas, e.g. 'KY' or 'KY,WV'.
-        facility_name: Part of a facility (plant) name.
-        primary_fuel: Primary fuel to match, e.g. 'coal' or 'gas'.
-        county: Part of a county name.
-        unit_type: Part of a unit type name.
-        level: How to group the rows: 'facility', 'state', 'unit' or 'year'. Use 'year' to compare years.
-        rank_by: Measurement to rank by: co2_mass, so2_mass, nox_mass, gross_load or heat_input.
-        order: 'desc' for highest first, 'asc' for lowest first.
-        limit: How many rows to return (1 to 50).
-    """
+def _int_arg(name: str, default: int) -> int:
+    """Read an integer query-string argument, falling back on any bad input."""
+    raw = request.args.get(name)
+    if raw is None:
+        return default
     try:
-        return run_emissions_query(
-            year=year, year_min=year_min, year_max=year_max, state=state,
-            facility_name=facility_name, primary_fuel=primary_fuel, county=county,
-            unit_type=unit_type, level=level, rank_by=rank_by, order=order, limit=limit,
+        return int(raw)
+    except (TypeError, ValueError):
+        return default
+
+
+def _requested_limit() -> int:
+    """Read ?limit= from the query string, falling back to the default."""
+    return max(1, min(_int_arg("limit", DEFAULT_LIMIT), MAX_LIMIT))
+
+
+def _latest_reporting_year() -> Optional[int]:
+    """The most recent year with any annual record, or None if none exist."""
+    return db.session.execute(
+        select(func.max(AnnualRecord.reporting_year))
+    ).scalar()
+
+
+@api_bp.route("/emissions/top-facilities", methods=["GET"])
+def top_facilities():
+    """Return the facilities with the highest total CO2 mass for one year.
+
+    Query parameters:
+        year:  reporting year to report on. Defaults to the most recent year
+               present in the database -- totals are never blended across
+               years, which would compare a facility's two-year total against
+               another's single year.
+        limit: how many facilities to return (default 10, capped at 100).
+    """
+    raw_year = (request.args.get("year") or "").strip()
+    year: Optional[int]
+
+    if raw_year:
+        try:
+            year = int(raw_year)
+        except ValueError:
+            return (
+                jsonify(
+                    {
+                        "error": f"Invalid year '{raw_year}'.",
+                        "detail": "Expected a four-digit year, for example 2023.",
+                    }
+                ),
+                400,
+            )
+    else:
+        try:
+            year = _latest_reporting_year()
+        except SQLAlchemyError as exc:
+            db.session.rollback()
+            current_app.logger.exception("latest-year lookup failed")
+            return jsonify({"error": "Database query failed", "detail": str(exc)}), 500
+
+        if year is None:
+            return jsonify([])
+
+    total_co2 = func.sum(AnnualRecord.co2_mass).label("total_co2")
+
+    statement = (
+        select(
+            Facility.epa_facility_id,
+            Facility.facility_name,
+            Facility.state_code,
+            total_co2,
         )
-    except Exception as exc:  # report the problem to the model instead of crashing
-        logger.exception("query_epa_database failed")
+        .join(Unit, Unit.facility_id == Facility.epa_facility_id)
+        .join(AnnualRecord, AnnualRecord.unit_id == Unit.internal_unit_key)
+        .where(AnnualRecord.reporting_year == year)
+        .group_by(
+            Facility.epa_facility_id, Facility.facility_name, Facility.state_code
+        )
+        .order_by(total_co2.desc())
+        .limit(_requested_limit())
+    )
+
+    try:
+        rows = db.session.execute(statement).all()
+    except SQLAlchemyError as exc:
         db.session.rollback()
-        return {"status": "error", "message": str(exc)}
+        current_app.logger.exception("top-facilities query failed")
+        return jsonify({"error": "Database query failed", "detail": str(exc)}), 500
+
+    return jsonify(
+        [
+            {
+                "facility_id": row.epa_facility_id,
+                "facility_name": row.facility_name,
+                "state_code": row.state_code,
+                "year": year,
+                "total_co2": round(float(row.total_co2 or 0.0), 2),
+            }
+            for row in rows
+        ]
+    )
 
 
-def get_gemini_client() -> genai.Client:
-    """Initialize and return the Google GenAI client."""
-    return genai.Client()
+@api_bp.route("/emissions/records", methods=["GET"])
+def emissions_records():
+    """Paginated, sortable, filterable annual emissions records.
 
-
-def _build_history(raw_history) -> list:
-    """Turn [{'role': 'user'|'model', 'text': '...'}] from the page into Gemini history."""
-    history = []
-    if not isinstance(raw_history, list):
-        return history
-    for item in raw_history[-12:]:
-        if not isinstance(item, dict):
-            continue
-        role = item.get("role")
-        text = (item.get("text") or "").strip()
-        if role in ("user", "model") and text:
-            history.append(types.Content(role=role, parts=[types.Part(text=text)]))
-    return history
-
-
-@ai_bp.route("/query", methods=["POST"])
-def ai_query():
-    """Natural-language assistant: Gemini calls the database tool and explains the results."""
-    data = request.get_json(silent=True) or {}
-    user_message = (data.get("prompt") or "").strip()
-
-    if not user_message:
-        return jsonify({"error": "No prompt provided."}), 400
+    Accepts every data-explorer parameter (see app/services/search.py), so a
+    page of the explorer and this endpoint return the same rows for the same
+    query string. Invalid parameters produce a 400 listing each problem.
+    """
+    search = parse_search(request.args)
+    if search.errors:
+        return jsonify({"error": "Invalid search parameters", "detail": search.errors}), 400
 
     try:
         results = run_search(search)
@@ -373,37 +241,304 @@ def _json_value(value):
 
 @api_bp.route("/emissions/years", methods=["GET"])
 def reporting_years():
-    """Return available years for emissions data."""
+    """Return every reporting year that has annual records, newest first.
+
+    Intended for populating a year selector, so the front end offers only
+    years that actually have data rather than a hardcoded range.
+    """
+    statement = (
+        select(AnnualRecord.reporting_year)
+        .distinct()
+        .order_by(AnnualRecord.reporting_year.desc())
+    )
+
     try:
-        years = db.session.scalars(
-            select(AnnualRecord.reporting_year)
-            .distinct()
-            .order_by(AnnualRecord.reporting_year.desc())
-        ).all()
-        return jsonify({"years": years})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        years = db.session.execute(statement).scalars().all()
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        current_app.logger.exception("reporting-years query failed")
+        return jsonify({"error": "Database query failed", "detail": str(exc)}), 500
+
+    return jsonify([int(year) for year in years])
+
+# ---------------------------------------------------------------------------
+# Phase 2: analytical data layer
+# ---------------------------------------------------------------------------
 
 
-@api_bp.route("/emissions/top-facilities", methods=["GET"])
-def top_facilities():
-    """Return top emitting facilities (by total CO2) for a given year."""
+def _analysis_or_error():
+    analysis = parse_analysis(request.args)
+    if analysis.errors:
+        return None, (
+            jsonify({"error": "Invalid analysis parameters", "detail": analysis.errors}),
+            400,
+        )
+    return analysis, None
+
+
+@api_bp.route("/analysis/summary", methods=["GET"])
+def analysis_summary():
+    """What an analysis selects: counts, a missing-value summary, and the
+    variables available.
+
+    Takes every data-explorer filter (see app/services/search.py) plus
+    ``level`` ("unit" or "facility"), so the same URL parameters select the
+    same records here, in the explorer and in /api/analysis/indicators.
+    """
+    analysis, error = _analysis_or_error()
+    if error:
+        return error
     try:
-        year = request.args.get("year", type=int)
-        limit = request.args.get("limit", type=int, default=10)
+        units = add_indicators(load_units(analysis.search))
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        current_app.logger.exception("analysis summary query failed")
+        return jsonify({"error": "Database query failed", "detail": str(exc)}), 500
 
-        if year is None:  # default to the most recent year in the data
-            year = db.session.scalar(select(func.max(AnnualRecord.reporting_year)))
+    frame = facility_frame(units) if analysis.level == "facility" else units
+    return jsonify(
+        {
+            "level": analysis.level,
+            "parameters": request.args.to_dict(flat=False),
+            "counts": dataset_counts(units),
+            "rows": int(len(frame)),
+            "missing": missing_summary(frame, analysis.level),
+            "variables": variables(analysis.level),
+        }
+    )
 
-        result = run_emissions_query(year=year, level="facility", rank_by="co2_mass", limit=limit)
-        data = [
-            {
-                "facility_name": row["facility_name"],
-                "state": row["state_code"],
-                "co2_mass": row["co2_mass"],
-            }
-            for row in result.get("rows", [])
-        ]
-        return jsonify({"data": data})
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
+@api_bp.route("/analysis/indicators", methods=["GET"])
+def analysis_indicators():
+    """Derived performance indicators for the selected records, paginated.
+
+    Query parameters: every data-explorer filter, plus ``level``, ``yoy``
+    (variables to compute year-over-year changes for), ``sort``, ``order``,
+    ``page`` and ``per_page`` (up to 1,000). Missing and undefined values are
+    null, never 0. The response carries the definitions of the indicators.
+    """
+    analysis, error = _analysis_or_error()
+    if error:
+        return error
+    try:
+        frame = analysis_frame(analysis)
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        current_app.logger.exception("analysis indicators query failed")
+        return jsonify({"error": "Database query failed", "detail": str(exc)}), 500
+
+    per_page = max(1, min(_int_arg("per_page", ANALYSIS_PER_PAGE), ANALYSIS_MAX_PER_PAGE))
+    total = int(len(frame))
+    total_pages = max(1, math.ceil(total / per_page))
+    page = max(1, min(_int_arg("page", 1), total_pages))
+    rows = frame.iloc[(page - 1) * per_page : page * per_page]
+    return jsonify(
+        {
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "level": analysis.level,
+            "parameters": request.args.to_dict(flat=False),
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "total_pages": total_pages,
+            "columns": analysis.columns(),
+            "definitions": {
+                name: var.as_dict() for name, var in numeric_variables(analysis.level).items()
+            },
+            "records": json_records(rows),
+        }
+    )
+
+
+@api_bp.route("/traci/factors", methods=["GET"])
+def traci_factors():
+    """The stored TRACI characterization factors (?version=, default latest)."""
+    version = (request.args.get("version") or "").strip() or None
+    factors = factors_for(version)
+    if not factors:
+        return jsonify({"error": "No TRACI factors stored", "detail": f"version {version or 'any'}"}), 404
+    return jsonify(
+        {
+            "version": factors[0].version,
+            "factors": [
+                {
+                    "pollutant_name": f.pollutant_name,
+                    "cas_number": f.cas_number,
+                    "campd_metric": f.campd_metric,
+                    "medium": f.medium,
+                    "impact_category": f.impact_category,
+                    "impact_label": CATEGORY_LABELS.get(f.impact_category, f.impact_category),
+                    "factor_value": f.factor_value,
+                    "factor_unit": f.factor_unit,
+                    "source": f.source,
+                }
+                for f in factors
+            ],
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Phase 2, week 2: statistics, comparisons and TRACI impacts
+# ---------------------------------------------------------------------------
+
+
+def _week2_selection(version=None):
+    """The analysis, its unit-years with indicators and impacts, or an error."""
+    analysis, error = _analysis_or_error()
+    if error:
+        return None, None, None, error
+    try:
+        units, cats = load_selection(analysis, version)
+    except SQLAlchemyError as exc:
+        db.session.rollback()
+        current_app.logger.exception("analysis query failed")
+        return None, None, None, (jsonify({"error": "Database query failed", "detail": str(exc)}), 500)
+    return analysis, units, cats, None
+
+
+def _options_error(errors):
+    return jsonify({"error": "Invalid parameters", "detail": errors}), 400
+
+
+@api_bp.route("/analysis/statistics", methods=["GET"])
+def analysis_statistics():
+    """Descriptive statistics of numeric variables, optionally grouped.
+
+    Takes every data-explorer filter plus ``level`` ("unit" or "facility"),
+    ``variables`` (comma-separated; default all, including TRACI impacts) and
+    ``group_by`` (year, state, primary_fuel, unit_type; year or state at the
+    facility level). Statistics use present values only; missing are counted.
+    """
+    analysis, units, cats, error = _week2_selection()
+    if error:
+        return error
+    variables = all_variables(analysis.level, cats)
+    options = parse_statistics_options(request.args, analysis.level, variables)
+    if options["errors"]:
+        return _options_error(options["errors"])
+    frame = level_frame(units, analysis.level, cats)
+    chosen = options["variables"]
+    body = {
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "level": analysis.level,
+        "parameters": request.args.to_dict(flat=False),
+        "selection": dataset_counts(units),
+        "rows": int(len(frame)),
+        "group_by": options["group"],
+        "statistics_defined": {k: {"label": label, "meaning": text}
+                               for k, (label, text) in STATISTICS.items()},
+        "method": {
+            "std": "sample standard deviation (n - 1)",
+            "percentiles": "linear interpolation (numpy/pandas 'linear', Excel PERCENTILE.INC)",
+            "ci95": "mean ± t(0.975, n-1) × std / sqrt(n)",
+            "outliers": "outside Q1 - 1.5 IQR .. Q3 + 1.5 IQR",
+            "missing": "missing values are excluded and counted, never treated as 0",
+        },
+        "traci_version": cats[0].version if cats else None,
+    }
+    if options["group"]:
+        body["definitions"] = {name: var.as_dict() for name, var in chosen.items()}
+        body["groups"] = describe_grouped(frame, chosen, options["group"])
+    else:
+        body["variables"] = describe(frame, chosen)
+    return jsonify(body)
+
+
+@api_bp.route("/analysis/compare", methods=["GET"])
+def analysis_compare():
+    """Compare groups on one variable, with ranks and differences.
+
+    Takes every data-explorer filter plus ``by`` (state, primary_fuel,
+    facility, unit_type, year), ``metric`` (any numeric variable or TRACI
+    impact), ``baseline`` (a group to compare with; default the average group
+    for totals, all records combined for rates), ``order`` and ``limit``
+    (10, 25, 50, 100 or all). Includes a Kruskal-Wallis H test.
+    """
+    analysis, units, cats, error = _week2_selection()
+    if error:
+        return error
+    variables = all_variables("unit", cats)
+    options = parse_compare_options(request.args, variables)
+    if options["errors"]:
+        return _options_error(options["errors"])
+    result = compare_groups(units, variables[options["metric"]], options["by"], options["baseline"])
+    result["groups"] = shown_groups(result["groups"], options["order"], options["limit"])
+    return jsonify({
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "parameters": request.args.to_dict(flat=False),
+        "selection": dataset_counts(units),
+        "order": options["order"],
+        "limit": options["limit"],
+        **result,
+    })
+
+
+@api_bp.route("/traci/impacts", methods=["GET"])
+def traci_impacts():
+    """Potential impacts of the selected emissions by TRACI category.
+
+    Takes every data-explorer filter plus ``version`` (TRACI version; default
+    latest), ``group_by`` (state, primary_fuel, unit_type, year, facility),
+    ``metric`` (the impact or ``<impact>_per_mwh`` to rank groups by) and
+    ``limit``. Masses are converted with 1 short ton = 907.18474 kg and
+    impact_c = sum(mass_kg x CF); each category keeps its own unit.
+    """
+    version = (request.args.get("version") or "").strip() or None
+    if version and version not in versions():
+        return jsonify({"error": "Unknown TRACI version", "detail": f"version {version} is not stored"}), 404
+    analysis, units, cats, error = _week2_selection(version)
+    if error:
+        return error
+    if not cats:
+        return jsonify({"error": "No TRACI factors stored", "detail": "run flask db upgrade"}), 404
+    options = parse_impact_options(request.args, cats)
+    if options["errors"]:
+        return _options_error(options["errors"])
+    groups = grouped_impacts(units, cats, options["group"]) if len(units) else []
+    return jsonify({
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "parameters": request.args.to_dict(flat=False),
+        "selection": dataset_counts(units),
+        "traci_version": cats[0].version,
+        "short_ton_kg": SHORT_TON_KG,
+        "formula": "impact_c = sum_i(mass_short_tons_i x 907.18474 x CF_i,c)",
+        "note": DISCLAIMER,
+        "categories": impact_summary(units, cats),
+        "group_by": options["group"],
+        "ranked_by": options["metric"],
+        "group_count": len(groups),
+        "groups": sorted_groups(groups, options["metric"], options["limit"]),
+        "worked_example": worked_example(units, cats),
+    })
+
+
+# ---------------------------------------------------------------------------
+# AI assistant (see app/services/assistant.py)
+# ---------------------------------------------------------------------------
+
+
+@ai_bp.route("/query", methods=["POST"])
+def ai_query():
+    """Answer a plain-English question about the data or the page on screen.
+
+    Body: ``{"prompt": "...", "history": [{"role": "user"|"model", "text": "..."}],
+    "page": {...snapshot of the page the user is looking at...}}``.
+    Returns ``{"response": "...", "actions": [{"type": "navigate"|"download",
+    "url": "...", "label": "...", "open_now": bool}]}``, or ``{"error": "..."}``
+    with a 4xx/5xx status.
+    """
+    data = request.get_json(silent=True) or {}
+    prompt = (data.get("prompt") or "").strip()
+    if not prompt:
+        return jsonify({"error": "No prompt provided."}), 400
+    if len(prompt) > MAX_PROMPT_LENGTH:
+        return jsonify({"error": f"Keep the question under {MAX_PROMPT_LENGTH} characters."}), 400
+    try:
+        answer, actions = ask(prompt, data.get("history"), data.get("page"))
+    except AssistantError as exc:
+        return jsonify({"error": str(exc)}), exc.status
+    except Exception:  # noqa: BLE001 - never hand the panel an HTML error page
+        current_app.logger.exception("AI assistant endpoint failed")
+        return jsonify({"error": "The assistant hit an unexpected error; see the server log."}), 500
+    return jsonify({"response": answer, "actions": actions})
