@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import math
+
 from collections import defaultdict
 from typing import Any
 
-from flask import Blueprint, flash, redirect, render_template, request, url_for
+from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
 from sqlalchemy import delete, func, select
 
 from app import db
@@ -552,3 +554,300 @@ def delete_dataset(dataset_id: int):
     db.session.commit()
     flash(f"Deleted dataset '{name}' and its {count:,} record(s).", "info")
     return redirect(url_for("main.index"))
+# ---------------------------------------------------------------------------
+# Visualization dashboard (Plotly): one page plus JSON endpoints it reads
+# ---------------------------------------------------------------------------
+VIZ_METRICS: dict[str, tuple[str, str]] = {
+    "co2_mass": ("CO₂ emissions", "short tons"),
+    "so2_mass": ("SO₂ emissions", "short tons"),
+    "nox_mass": ("NOₓ emissions", "short tons"),
+    "gross_load": ("Gross load", "MWh"),
+    "heat_input": ("Heat input", "MMBtu"),
+    "operating_time": ("Operating time", "hours"),
+    "co2_intensity": ("CO₂ intensity", "short tons CO₂ per MWh"),
+}
+CORR_METRICS = ["operating_time", "gross_load", "heat_input", "co2_mass", "so2_mass", "nox_mass"]
+
+# TRACI-style impact categories. Mass columns are short tons; "scale" converts to tonnes.
+# CHECK these factors against the EPA TRACI 2.1 table before putting numbers in the report.
+TRACI_CATEGORIES = {
+    "gwp": {
+        "label": "Global warming potential (100-year)",
+        "unit": "tonnes CO₂-eq",
+        "factors": {"co2_mass": 1.0},
+        "scale": 0.90718474,
+    },
+    "acidification": {
+        "label": "Acidification potential",
+        "unit": "tonnes SO₂-eq",
+        "factors": {"so2_mass": 1.0, "nox_mass": 0.7},
+        "scale": 0.90718474,
+    },
+}
+
+
+def _viz_metric(name: str | None, default: str = "co2_mass") -> str:
+    return name if name in VIZ_METRICS else default
+
+
+def _viz_meta(metric: str) -> dict[str, str]:
+    label, unit = VIZ_METRICS[metric]
+    return {"metric": metric, "label": label, "unit": unit}
+
+
+def _num(value: Any) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    return number if math.isfinite(number) else None
+
+
+def _thin(values: list[float], cap: int = 5000) -> list[float]:
+    if len(values) <= cap:
+        return values
+    return values[:: -(-len(values) // cap)]
+
+
+def _viz_row_expr(metric: str):
+    """Per-record value (no aggregation)."""
+    if metric == "co2_intensity":
+        return (AnnualRecord.co2_mass * 1.0) / func.nullif(AnnualRecord.gross_load, 0)
+    return getattr(AnnualRecord, metric)
+
+
+def _viz_agg_expr(metric: str):
+    """Aggregated value: sums, except hours (average) and intensity (ratio of sums)."""
+    if metric == "co2_intensity":
+        return (func.sum(AnnualRecord.co2_mass) * 1.0) / func.nullif(
+            func.sum(AnnualRecord.gross_load), 0
+        )
+    column = getattr(AnnualRecord, metric)
+    return func.avg(column) if metric == "operating_time" else func.sum(column)
+
+
+def _viz_base(*columns):
+    """SELECT ... FROM records JOIN units JOIN facilities, with the shared page filters."""
+    stmt = (
+        select(*columns)
+        .select_from(AnnualRecord)
+        .join(Unit, Unit.internal_unit_key == AnnualRecord.unit_id)
+        .join(Facility, Facility.epa_facility_id == Unit.facility_id)
+    )
+    state = request.args.get("state", "").strip().upper()
+    fuel = request.args.get("fuel", "").strip()
+    year_min = request.args.get("year_min", type=int)
+    year_max = request.args.get("year_max", type=int)
+    if state:
+        stmt = stmt.where(Facility.state_code == state)
+    if fuel:
+        stmt = stmt.where(Unit.primary_fuel == fuel)
+    if year_min is not None:
+        stmt = stmt.where(AnnualRecord.reporting_year >= year_min)
+    if year_max is not None:
+        stmt = stmt.where(AnnualRecord.reporting_year <= year_max)
+    return stmt
+
+
+def _pearson(xs, ys) -> float | None:
+    n = len(xs)
+    if n < 3:
+        return None
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    syy = sum((y - my) ** 2 for y in ys)
+    if sxx == 0 or syy == 0:
+        return None
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    return sxy / math.sqrt(sxx * syy)
+
+
+@main_bp.route("/visualizations")
+def visualizations():
+    """Interactive Plotly dashboard."""
+    states = [
+        s for (s,) in db.session.execute(
+            select(Facility.state_code).where(Facility.state_code != "").distinct()
+            .order_by(Facility.state_code)
+        )
+    ]
+    fuels = [
+        f for (f,) in db.session.execute(
+            select(Unit.primary_fuel)
+            .where(Unit.primary_fuel.is_not(None), Unit.primary_fuel != "")
+            .distinct().order_by(Unit.primary_fuel)
+        )
+    ]
+    years = [
+        y for (y,) in db.session.execute(
+            select(AnnualRecord.reporting_year).distinct().order_by(AnnualRecord.reporting_year)
+        )
+    ]
+    return render_template(
+        "visualizations.html",
+        states=states, fuels=fuels, years=years, years_desc=list(reversed(years)),
+        metrics=VIZ_METRICS,
+    )
+
+
+@main_bp.route("/api/viz/timeseries")
+def viz_timeseries():
+    """Line chart data: a metric by year, optionally split by state or fuel."""
+    metric = _viz_metric(request.args.get("metric"))
+    group = request.args.get("group", "none")
+    value = _viz_agg_expr(metric)
+    group_col = {"state": Facility.state_code, "fuel": Unit.primary_fuel}.get(group)
+
+    if group_col is None:
+        rows = db.session.execute(
+            _viz_base(AnnualRecord.reporting_year, value)
+            .group_by(AnnualRecord.reporting_year)
+            .order_by(AnnualRecord.reporting_year)
+        ).all()
+        series = [{
+            "name": "All selected units",
+            "x": [r[0] for r in rows],
+            "y": [_num(r[1]) for r in rows],
+        }]
+    else:
+        rows = db.session.execute(
+            _viz_base(group_col, AnnualRecord.reporting_year, value)
+            .group_by(group_col, AnnualRecord.reporting_year)
+            .order_by(AnnualRecord.reporting_year)
+        ).all()
+        grouped: dict[str, dict[str, list]] = defaultdict(lambda: {"x": [], "y": []})
+        for name, year, v in rows:
+            key = name or "Unknown"
+            grouped[key]["x"].append(year)
+            grouped[key]["y"].append(_num(v))
+        ranked = sorted(grouped, key=lambda n: sum(v or 0 for v in grouped[n]["y"]), reverse=True)[:8]
+        series = [{"name": n, **grouped[n]} for n in ranked]
+
+    return jsonify({**_viz_meta(metric), "series": series})
+
+
+@main_bp.route("/api/viz/bar")
+def viz_bar():
+    """Bar chart data: top N states, fuels or facilities for a metric."""
+    metric = _viz_metric(request.args.get("metric"))
+    by = request.args.get("by", "state")
+    limit = min(max(request.args.get("limit", 10, type=int), 1), 25)
+    year = request.args.get("year", type=int)
+    value = _viz_agg_expr(metric)
+
+    if by == "facility":
+        stmt = _viz_base(Facility.facility_name, Facility.state_code, value).group_by(
+            Facility.epa_facility_id, Facility.facility_name, Facility.state_code
+        )
+    else:
+        by = "fuel" if by == "fuel" else "state"
+        col = Unit.primary_fuel if by == "fuel" else Facility.state_code
+        stmt = _viz_base(col, value).group_by(col)
+    if year is not None:
+        stmt = stmt.where(AnnualRecord.reporting_year == year)
+
+    rows = db.session.execute(stmt.order_by(value.desc().nulls_last()).limit(limit)).all()
+    if by == "facility":
+        labels = [f"{r[0]} ({r[1]})" for r in rows]
+        values = [_num(r[2]) for r in rows]
+    else:
+        labels = [r[0] or "Unknown" for r in rows]
+        values = [_num(r[1]) for r in rows]
+    return jsonify({**_viz_meta(metric), "by": by, "year": year, "labels": labels, "values": values})
+
+
+@main_bp.route("/api/viz/distribution")
+def viz_distribution():
+    """Histogram / box plot data: unit-year values for one metric (zeros excluded)."""
+    metric = _viz_metric(request.args.get("metric"))
+    year = request.args.get("year", type=int)
+    value = _viz_row_expr(metric)
+    stmt = _viz_base(Unit.primary_fuel, value).where(value.is_not(None))
+    if year is not None:
+        stmt = stmt.where(AnnualRecord.reporting_year == year)
+
+    by_fuel: dict[str, list[float]] = defaultdict(list)
+    for fuel, v in db.session.execute(stmt):
+        number = _num(v)
+        if number is not None and number > 0:
+            by_fuel[fuel or "Unknown"].append(number)
+    everything = [v for vals in by_fuel.values() for v in vals]
+    top = sorted(by_fuel, key=lambda f: len(by_fuel[f]), reverse=True)[:6]
+    return jsonify({
+        **_viz_meta(metric), "year": year, "count": len(everything),
+        "values": _thin(everything),
+        "groups": {f: _thin(by_fuel[f]) for f in top},
+    })
+
+
+@main_bp.route("/api/viz/scatter")
+def viz_scatter():
+    """Scatter plot data: one point per unit-year for two metrics."""
+    x_metric = _viz_metric(request.args.get("x"), "heat_input")
+    y_metric = _viz_metric(request.args.get("y"), "co2_mass")
+    year = request.args.get("year", type=int)
+    xe, ye = _viz_row_expr(x_metric), _viz_row_expr(y_metric)
+    stmt = _viz_base(
+        Facility.facility_name, Unit.epa_unit_id, Unit.primary_fuel,
+        AnnualRecord.reporting_year, xe, ye,
+    ).where(xe.is_not(None), ye.is_not(None))
+    if year is not None:
+        stmt = stmt.where(AnnualRecord.reporting_year == year)
+
+    points: dict[str, list] = {"name": [], "fuel": [], "x": [], "y": []}
+    for name, unit_id, fuel, yr, xv, yv in db.session.execute(stmt.limit(4000)):
+        xv, yv = _num(xv), _num(yv)
+        if xv is None or yv is None:
+            continue
+        points["name"].append(f"{name} unit {unit_id} ({yr})")
+        points["fuel"].append(fuel or "Unknown")
+        points["x"].append(xv)
+        points["y"].append(yv)
+    return jsonify({"x_meta": _viz_meta(x_metric), "y_meta": _viz_meta(y_metric),
+                    "year": year, "points": points})
+
+
+@main_bp.route("/api/viz/correlation")
+def viz_correlation():
+    """Pearson correlation matrix across the numeric record metrics."""
+    year = request.args.get("year", type=int)
+    stmt = _viz_base(*[getattr(AnnualRecord, m) for m in CORR_METRICS])
+    if year is not None:
+        stmt = stmt.where(AnnualRecord.reporting_year == year)
+    rows = [[_num(v) for v in row] for row in db.session.execute(stmt)]
+    rows = [r for r in rows if all(v is not None for v in r)]
+    columns = [list(c) for c in zip(*rows)] if rows else [[] for _ in CORR_METRICS]
+    matrix = [[_pearson(a, b) for b in columns] for a in columns]
+    labels = [f"{VIZ_METRICS[m][0]}" for m in CORR_METRICS]
+    return jsonify({"labels": labels, "matrix": matrix, "count": len(rows), "year": year})
+
+
+@main_bp.route("/api/viz/traci")
+def viz_traci():
+    """TRACI-style impact estimates by year, from CO2/SO2/NOx masses."""
+    stmt = (
+        _viz_base(
+            AnnualRecord.reporting_year,
+            func.sum(AnnualRecord.co2_mass),
+            func.sum(AnnualRecord.so2_mass),
+            func.sum(AnnualRecord.nox_mass),
+        )
+        .group_by(AnnualRecord.reporting_year)
+        .order_by(AnnualRecord.reporting_year)
+    )
+    rows = db.session.execute(stmt).all()
+    index = {"co2_mass": 1, "so2_mass": 2, "nox_mass": 3}
+    categories = []
+    for key, cfg in TRACI_CATEGORIES.items():
+        values = [
+            sum((_num(r[index[m]]) or 0) * f for m, f in cfg["factors"].items()) * cfg["scale"]
+            for r in rows
+        ]
+        categories.append({"key": key, "label": cfg["label"], "unit": cfg["unit"], "values": values})
+    return jsonify({
+        "years": [r[0] for r in rows],
+        "categories": categories,
+        "note": "Estimates computed from reported CO₂, SO₂ and NOₓ mass using the characterization "
+                "factors in TRACI_CATEGORIES (the NOₓ acidification factor is approximate). "
+                "Verify against the EPA TRACI 2.1 table.",
+    })
